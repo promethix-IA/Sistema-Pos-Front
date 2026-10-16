@@ -1,0 +1,10 @@
+{
+  "description": "Streamline operations for small businesses with an ERP system that manages sales, products, customers, and suppliers through an intuitive dashboard.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
