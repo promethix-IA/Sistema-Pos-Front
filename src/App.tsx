@@ -15,6 +15,7 @@ interface Product {
 
 interface Client {
   id: number; name: string; phone: string; email: string;
+  address: string; idNumber: string; birthDate: string;
   totalBought: number; lastPurchase: string;
   history: { date: string; items: string; total: number }[];
 }
@@ -41,13 +42,13 @@ const initProducts: Product[] = [
 ];
 
 const initClients: Client[] = [
-  { id: 1, name: "María López", phone: "3114567890", email: "maria@gmail.com", totalBought: 145000, lastPurchase: "2026-09-14",
+  { id: 1, name: "María López", phone: "3114567890", email: "maria@gmail.com", address: "Cra 5 #12-40", idNumber: "1144088123", birthDate: "1992-03-18", totalBought: 145000, lastPurchase: "2026-09-14",
     history: [{ date: "2026-09-14", items: "Café × 2, Brownie × 1", total: 10000 }, { date: "2026-09-12", items: "Sándwich × 1, Agua × 2", total: 9600 }] },
-  { id: 2, name: "Carlos Ruiz", phone: "3009876543", email: "c.ruiz@outlook.com", totalBought: 98000, lastPurchase: "2026-09-13",
+  { id: 2, name: "Carlos Ruiz", phone: "3009876543", email: "c.ruiz@outlook.com", address: "Calle 23 #8-15", idNumber: "1098765432", birthDate: "1988-11-02", totalBought: 98000, lastPurchase: "2026-09-13",
     history: [{ date: "2026-09-13", items: "Café × 3, Té × 1", total: 13300 }] },
-  { id: 3, name: "Luisa Fernández", phone: "3201112233", email: "luisaf@yahoo.com", totalBought: 220000, lastPurchase: "2026-09-15",
+  { id: 3, name: "Luisa Fernández", phone: "3201112233", email: "luisaf@yahoo.com", address: "Av. Roosevelt #45-10", idNumber: "3155566677", birthDate: "1996-07-25", totalBought: 220000, lastPurchase: "2026-09-15",
     history: [{ date: "2026-09-15", items: "Queso 0.5kg, Empanada × 2", total: 19000 }] },
-  { id: 4, name: "Andrés Moreno", phone: "3158889900", email: "andres.m@empresa.co", totalBought: 67000, lastPurchase: "2026-09-10",
+  { id: 4, name: "Andrés Moreno", phone: "3158889900", email: "andres.m@empresa.co", address: "Calle 70 #3-22", idNumber: "8012345678", birthDate: "1985-01-09", totalBought: 67000, lastPurchase: "2026-09-10",
     history: [{ date: "2026-09-10", items: "Agua × 5, Brownie × 2", total: 15000 }] },
 ];
 
@@ -384,7 +385,8 @@ function Productos({ products, setProducts }: { products: Product[]; setProducts
 function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: Client[]) => void }) {
   const [detail, setDetail] = useState<Client | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", email: "" });
+  const emptyForm = { name: "", phone: "", email: "", address: "", idNumber: "", birthDate: "" };
+  const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState("");
 
   const filtered = clients.filter(c =>
@@ -393,10 +395,14 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
 
   const addClient = () => {
     if (!form.name) return;
-    const nc: Client = { id: Date.now(), name: form.name, phone: form.phone, email: form.email, totalBought: 0, lastPurchase: "—", history: [] };
+    const nc: Client = {
+      id: Date.now(), name: form.name, phone: form.phone, email: form.email,
+      address: form.address, idNumber: form.idNumber, birthDate: form.birthDate,
+      totalBought: 0, lastPurchase: "—", history: [],
+    };
     setClients([...clients, nc]);
     setShowModal(false);
-    setForm({ name: "", phone: "", email: "" });
+    setForm(emptyForm);
   };
 
   if (detail) return (
@@ -406,6 +412,7 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
         <div>
           <h1 className="text-xl font-bold text-slate-800">{detail.name}</h1>
           <p className="text-slate-500 text-sm">{detail.phone} · {detail.email}</p>
+          <p className="text-slate-500 text-sm">{detail.address || "Sin dirección"} · Cédula {detail.idNumber || "—"} · Nacimiento {detail.birthDate || "—"}</p>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-4">
@@ -439,10 +446,10 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
         <Button onClick={() => setShowModal(true)}>+ Agregar cliente</Button>
       </div>
       <Input placeholder="Buscar por nombre o teléfono..." value={search} onChange={e => setSearch(e.target.value)} className="w-72" />
-      <Card className="overflow-hidden">
+      <Card className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead><tr className="bg-slate-50 border-b border-slate-100">
-            {["Nombre", "Teléfono", "Email", "Total comprado", "Última compra", ""].map(h =>
+            {["Nombre", "Teléfono", "Email", "Dirección", "Cédula", "Nacimiento", "Total comprado", "Última compra", ""].map(h =>
               <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>)}
           </tr></thead>
           <tbody>{filtered.map(c => (
@@ -450,6 +457,9 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
               <td className="px-4 py-3 font-medium text-slate-800">{c.name}</td>
               <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.phone}</td>
               <td className="px-4 py-3 text-slate-500">{c.email}</td>
+              <td className="px-4 py-3 text-slate-600">{c.address || "—"}</td>
+              <td className="px-4 py-3 text-slate-600">{c.idNumber || "—"}</td>
+              <td className="px-4 py-3 text-slate-600">{c.birthDate || "—"}</td>
               <td className="px-4 py-3 font-semibold text-blue-700">{fmt(c.totalBought)}</td>
               <td className="px-4 py-3 text-slate-500">{c.lastPurchase}</td>
               <td className="px-4 py-3 text-right">
@@ -465,6 +475,9 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
             <Input label="Nombre completo" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             <Input label="Teléfono" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
             <Input label="Email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+            <Input label="Dirección" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
+            <Input label="Número de cédula" value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value })} />
+            <Input label="Fecha de nacimiento" type="date" value={form.birthDate} onChange={e => setForm({ ...form, birthDate: e.target.value })} />
           </div>
           <div className="flex gap-2 justify-end mt-5">
             <Button variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Button>
