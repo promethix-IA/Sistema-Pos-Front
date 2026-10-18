@@ -22,7 +22,7 @@ interface Client {
 
 interface Supplier {
   id: number; name: string; phone: string; products: string;
-  orders: { date: string; product: string; qty: number; price: number }[];
+  orders: { date: string; product: string; qty: number; unitPrice: number; price: number }[];
 }
 
 interface CartItem {
@@ -54,9 +54,9 @@ const initClients: Client[] = [
 
 const initSuppliers: Supplier[] = [
   { id: 1, name: "Café del Norte SAS", phone: "6014441122", products: "Café, Té",
-    orders: [{ date: "2026-09-01", product: "Café Americano", qty: 50, price: 60000 }] },
+    orders: [{ date: "2026-09-01", product: "Café Americano", qty: 50, unitPrice: 1200, price: 60000 }] },
   { id: 2, name: "Pan y Más Ltda.", phone: "6025556677", products: "Panadería, Empanadas",
-    orders: [{ date: "2026-09-05", product: "Brownie", qty: 30, price: 30000 }] },
+    orders: [{ date: "2026-09-05", product: "Brownie", qty: 30, unitPrice: 1000, price: 30000 }] },
   { id: 3, name: "Lácteos El Campo", phone: "3206667788", products: "Queso, Mantequilla",
     orders: [] },
 ];
@@ -497,24 +497,27 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products }: {
 }) {
   const [selected, setSelected] = useState<Supplier | null>(null);
   const [showOrder, setShowOrder] = useState(false);
-  const [order, setOrder] = useState({ product: "", qty: "", price: "" });
+  const [order, setOrder] = useState({ product: "", qty: "", unitPrice: "" });
   const [showNew, setShowNew] = useState(false);
   const [newSupp, setNewSupp] = useState({ name: "", phone: "", products: "" });
 
   const confirmOrder = () => {
-    if (!selected || !order.product || !order.qty) return;
+    if (!selected || !order.product || !order.qty || !order.unitPrice) return;
+    const qty = Number(order.qty);
+    const unitPrice = Number(order.unitPrice);
+    const price = qty * unitPrice;
     const updated = suppliers.map(s => s.id === selected.id
-      ? { ...s, orders: [...s.orders, { date: "2026-09-15", product: order.product, qty: Number(order.qty), price: Number(order.price) }] }
+      ? { ...s, orders: [...s.orders, { date: "2026-09-15", product: order.product, qty, unitPrice, price }] }
       : s);
     setSuppliers(updated);
     setSelected(updated.find(s => s.id === selected.id)!);
     // Update stock
     const updatedProducts = products.map(p =>
-      p.name.toLowerCase().includes(order.product.toLowerCase()) ? { ...p, stock: p.stock + Number(order.qty) } : p
+      p.name.toLowerCase().includes(order.product.toLowerCase()) ? { ...p, stock: p.stock + qty } : p
     );
     setProducts(updatedProducts);
     setShowOrder(false);
-    setOrder({ product: "", qty: "", price: "" });
+    setOrder({ product: "", qty: "", unitPrice: "" });
   };
 
   const addSupplier = () => {
@@ -531,7 +534,7 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products }: {
         <Button onClick={() => setShowNew(true)}>+ Agregar proveedor</Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         {/* Supplier list */}
         <Card className="overflow-hidden">
           <div className="p-4 border-b border-slate-100 font-bold text-slate-700 text-sm">Lista de proveedores</div>
@@ -563,14 +566,17 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products }: {
               <Card className="overflow-hidden flex-1">
                 <div className="p-4 border-b border-slate-100 font-semibold text-slate-700 text-sm">Órdenes de compra</div>
                 <table className="w-full text-sm">
-                  <thead><tr className="bg-slate-50"><th className="px-3 py-2 text-left text-xs text-slate-500">Fecha</th><th className="px-3 py-2 text-left text-xs text-slate-500">Producto</th><th className="px-3 py-2 text-center text-xs text-slate-500">Cant.</th><th className="px-3 py-2 text-right text-xs text-slate-500">Precio</th></tr></thead>
+                  <thead><tr className="bg-slate-50"><th className="px-3 py-2 text-left text-xs text-slate-500">Fecha</th><th className="px-3 py-2 text-left text-xs text-slate-500">Producto</th><th className="px-3 py-2 text-center text-xs text-slate-500">Cant.</th><th className="px-3 py-2 text-right text-xs text-slate-500">Precios</th></tr></thead>
                   <tbody>
                     {selected.orders.map((o, i) => (
                       <tr key={i} className="border-t border-slate-50">
                         <td className="px-3 py-2.5 text-slate-500 text-xs">{o.date}</td>
                         <td className="px-3 py-2.5 text-slate-700">{o.product}</td>
                         <td className="px-3 py-2.5 text-center font-bold text-slate-700">{o.qty}</td>
-                        <td className="px-3 py-2.5 text-right text-slate-600">{fmt(o.price)}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <p className="text-[11px] text-slate-500">Unitario {fmt(o.unitPrice)}</p>
+                          <p className="font-medium text-slate-700">Total {fmt(o.price)}</p>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -587,8 +593,14 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products }: {
           <div className="flex flex-col gap-3">
             <Input label="Producto" placeholder="Nombre del producto comprado" value={order.product} onChange={e => setOrder({ ...order, product: e.target.value })} />
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Cantidad" type="number" value={order.qty} onChange={e => setOrder({ ...order, qty: e.target.value })} />
-              <Input label="Precio total (COP)" type="number" value={order.price} onChange={e => setOrder({ ...order, price: e.target.value })} />
+              <Input label="Cantidad" type="number" min="1" value={order.qty} onChange={e => setOrder({ ...order, qty: e.target.value })} />
+              <Input label="Precio unitario (COP)" type="number" min="0" value={order.unitPrice} onChange={e => setOrder({ ...order, unitPrice: e.target.value })} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-slate-700">Precio total (COP)</label>
+              <div className="border border-slate-200 bg-slate-50 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-800">
+                {order.qty && order.unitPrice ? fmt(Number(order.qty) * Number(order.unitPrice)) : fmt(0)}
+              </div>
             </div>
             <div className="bg-blue-50 text-blue-700 rounded-lg px-3 py-2 text-xs">
               Al confirmar, se sumará la cantidad al stock del producto coincidente.
