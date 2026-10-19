@@ -6,11 +6,31 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Module = "dashboard" | "productos" | "clientes" | "proveedores" | "ventas" | "integraciones";
+type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "integraciones";
+
+type MovementType = "ENTRADA_COMPRA" | "SALIDA_VENTA" | "AJUSTE" | "ENTRADA_INICIAL" | "IMPORTACION";
 
 interface Product {
   id: number; code: string; name: string; category: string;
   buyPrice: number; sellPrice: number; stock: number;
+}
+
+interface Category {
+  id: number;
+  name: string;
+}
+
+interface InventoryMovement {
+  id: number;
+  date: string;
+  productId: number;
+  productName: string;
+  productCode: string;
+  type: MovementType;
+  qty: number;
+  balanceAfter: number;
+  note: string;
+  ref?: string;
 }
 
 interface Client {
@@ -22,11 +42,19 @@ interface Client {
 
 interface Supplier {
   id: number; name: string; phone: string; products: string;
-  orders: { date: string; product: string; qty: number; unitPrice: number; price: number }[];
+  orders: { date: string; product: string; productId?: number; qty: number; unitPrice: number; price: number; invoice?: string }[];
 }
 
 interface CartItem {
   product: Product; qty: number; weight?: number;
+}
+
+interface PosTicket {
+  id: number;
+  label: string;
+  cart: CartItem[];
+  payment: "efectivo" | "tarjeta" | null;
+  clientId: number | null;
 }
 
 // ─── Mock Data ─────────────────────────────────────────────────────────────────
@@ -52,14 +80,34 @@ const initClients: Client[] = [
     history: [{ date: "2026-09-10", items: "Agua × 5, Brownie × 2", total: 15000 }] },
 ];
 
+const initCategories: Category[] = [
+  { id: 1, name: "Bebidas" },
+  { id: 2, name: "Comida" },
+  { id: 3, name: "Panadería" },
+  { id: 4, name: "Lácteos" },
+];
+
 const initSuppliers: Supplier[] = [
   { id: 1, name: "Café del Norte SAS", phone: "6014441122", products: "Café, Té",
-    orders: [{ date: "2026-09-01", product: "Café Americano", qty: 50, unitPrice: 1200, price: 60000 }] },
+    orders: [{ date: "2026-09-01", product: "Café Americano", productId: 1, qty: 50, unitPrice: 1200, price: 60000, invoice: "FC-1001" }] },
   { id: 2, name: "Pan y Más Ltda.", phone: "6025556677", products: "Panadería, Empanadas",
-    orders: [{ date: "2026-09-05", product: "Brownie", qty: 30, unitPrice: 1000, price: 30000 }] },
+    orders: [{ date: "2026-09-05", product: "Brownie", productId: 5, qty: 30, unitPrice: 1000, price: 30000, invoice: "FC-2044" }] },
   { id: 3, name: "Lácteos El Campo", phone: "3206667788", products: "Queso, Mantequilla",
     orders: [] },
 ];
+
+const initMovements: InventoryMovement[] = initProducts.map((p, i) => ({
+  id: i + 1,
+  date: "2026-09-01",
+  productId: p.id,
+  productName: p.name,
+  productCode: p.code,
+  type: "ENTRADA_INICIAL",
+  qty: p.stock,
+  balanceAfter: p.stock,
+  note: "Stock inicial del sistema",
+  ref: "INI",
+}));
 
 const salesData = [
   { label: "Lun", amount: 185000 }, { label: "Mar", amount: 240000 }, { label: "Mié", amount: 198000 },
@@ -76,6 +124,120 @@ const monthData = [
 // ─── Utils ────────────────────────────────────────────────────────────────────
 
 const fmt = (n: number) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+const movementLabel: Record<MovementType, string> = {
+  ENTRADA_COMPRA: "Entrada compra",
+  SALIDA_VENTA: "Salida venta",
+  AJUSTE: "Ajuste",
+  ENTRADA_INICIAL: "Entrada inicial",
+  IMPORTACION: "Importación",
+};
+
+function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]) {
+  const esc = (v: string | number) => {
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))].join("\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function pushMovements(
+  products: Product[],
+  movements: InventoryMovement[],
+  entries: { productId: number; qty: number; type: MovementType; note: string; ref?: string; date?: string }[],
+): { products: Product[]; movements: InventoryMovement[] } {
+  let nextProducts = [...products];
+  let nextMovements = [...movements];
+  let idBase = Date.now();
+  for (const e of entries) {
+    const p = nextProducts.find(x => x.id === e.productId);
+    if (!p) continue;
+    const balanceAfter = Math.max(0, p.stock + e.qty);
+    nextProducts = nextProducts.map(x => x.id === e.productId ? { ...x, stock: balanceAfter } : x);
+    nextMovements = [{
+      id: idBase++,
+      date: e.date ?? todayStr(),
+      productId: p.id,
+      productName: p.name,
+      productCode: p.code,
+      type: e.type,
+      qty: e.qty,
+      balanceAfter,
+      note: e.note,
+      ref: e.ref,
+    }, ...nextMovements];
+  }
+  return { products: nextProducts, movements: nextMovements };
+}
+
+/** Simula apertura del cajón monedero vía impresora (ESC/POS kick). */
+function openCashDrawer() {
+  console.info("[POS] Cajón monedero: pulso de apertura enviado a la impresora");
+}
+
+type SaleReceipt = {
+  code: string;
+  items: { name: string; qty: number; weight?: number; lineTotal: number }[];
+  total: number;
+  paid: number;
+  change: number;
+  payment: "efectivo" | "tarjeta";
+  clientName?: string;
+  printed: boolean;
+};
+
+/** Imprime el ticket térmico / de caja en una ventana dedicada. */
+function printSaleTicket(sale: SaleReceipt) {
+  const rows = sale.items
+    .map(i => {
+      const qty = i.weight ? `${i.qty}kg` : `x${i.qty}`;
+      return `<tr><td>${i.name}<br/><span style="color:#555">${qty}</span></td><td style="text-align:right">${fmt(i.lineTotal)}</td></tr>`;
+    })
+    .join("");
+  const html = `<!DOCTYPE html><html><head><title>Ticket ${sale.code}</title>
+    <style>
+      body{font-family:ui-monospace,monospace;font-size:12px;width:280px;margin:0 auto;padding:12px;color:#000}
+      h1{font-size:14px;text-align:center;margin:0 0 4px}
+      p{margin:2px 0;text-align:center}
+      table{width:100%;border-collapse:collapse;margin-top:10px}
+      td{padding:4px 0;vertical-align:top}
+      .line{border-top:1px dashed #000;margin:8px 0}
+      .tot{font-weight:700;font-size:13px}
+    </style></head><body>
+    <h1>Tienda Central</h1>
+    <p>NIT 900.123.456-1 · Cali</p>
+    <p>Ticket #${sale.code}</p>
+    <p>${new Date().toLocaleString("es-CO")}</p>
+    ${sale.clientName ? `<p>Cliente: ${sale.clientName}</p>` : ""}
+    <div class="line"></div>
+    <table>${rows}</table>
+    <div class="line"></div>
+    <table>
+      <tr class="tot"><td>TOTAL</td><td style="text-align:right">${fmt(sale.total)}</td></tr>
+      <tr><td>Pago (${sale.payment})</td><td style="text-align:right">${fmt(sale.paid)}</td></tr>
+      <tr><td>Cambio</td><td style="text-align:right">${fmt(sale.change)}</td></tr>
+    </table>
+    <div class="line"></div>
+    <p>¡Gracias por su compra!</p>
+    <script>window.onload=()=>{window.print();setTimeout(()=>window.close(),300)}</script>
+    </body></html>`;
+  const w = window.open("", "_blank", "width=320,height=600");
+  if (!w) {
+    window.print();
+    return;
+  }
+  w.document.write(html);
+  w.document.close();
+}
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 
@@ -134,9 +296,9 @@ function Input({ label, ...props }: { label?: string } & React.InputHTMLAttribut
   );
 }
 
-function Select({ label, children, ...props }: { label?: string } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+function Select({ label, children, className = "", ...props }: { label?: string } & React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className={`flex flex-col gap-1 ${className}`}>
       {label && <label className="text-sm font-medium text-slate-700">{label}</label>}
       <select {...props} className="border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
         {children}
@@ -150,6 +312,7 @@ function Select({ label, children, ...props }: { label?: string } & React.Select
 const navItems: { id: Module; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
   { id: "productos", label: "Productos", icon: "⊞" },
+  { id: "inventario", label: "Inventario", icon: "▤" },
   { id: "clientes", label: "Clientes", icon: "◎" },
   { id: "proveedores", label: "Proveedores", icon: "⊡" },
   { id: "ventas", label: "Punto de Venta", icon: "⊙" },
@@ -290,43 +453,184 @@ function Dashboard({ products }: { products: Product[] }) {
 
 // ─── Products ────────────────────────────────────────────────────────────────
 
-function Productos({ products, setProducts }: { products: Product[]; setProducts: (p: Product[]) => void }) {
+function Productos({ products, setProducts, categories, setCategories, movements, setMovements }: {
+  products: Product[]; setProducts: (p: Product[]) => void;
+  categories: Category[]; setCategories: (c: Category[]) => void;
+  movements: InventoryMovement[]; setMovements: (m: InventoryMovement[]) => void;
+}) {
+  const emptyForm = { code: "", name: "", category: "", buyPrice: "", sellPrice: "", stock: "" };
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("Todas");
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ code: "", name: "", category: "", buyPrice: "", sellPrice: "", stock: "" });
+  const [editing, setEditing] = useState<Product | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [showCats, setShowCats] = useState(false);
+  const [newCat, setNewCat] = useState("");
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
-  const categories = ["Todas", ...Array.from(new Set(products.map(p => p.category)))];
+  const filterOpts = ["Todas", ...categories.map(c => c.name)];
   const filtered = products.filter(p =>
     (catFilter === "Todas" || p.category === catFilter) &&
     (p.name.toLowerCase().includes(search.toLowerCase()) || p.code.includes(search))
   );
 
-  const addProduct = () => {
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ ...emptyForm, category: categories[0]?.name ?? "" });
+    setShowModal(true);
+  };
+
+  const openEdit = (p: Product) => {
+    setEditing(p);
+    setForm({
+      code: p.code, name: p.name, category: p.category,
+      buyPrice: String(p.buyPrice), sellPrice: String(p.sellPrice), stock: String(p.stock),
+    });
+    setShowModal(true);
+  };
+
+  const saveProduct = () => {
     if (!form.name || !form.code) return;
-    const np: Product = {
-      id: Date.now(), code: form.code, name: form.name, category: form.category || "Sin categoría",
-      buyPrice: Number(form.buyPrice), sellPrice: Number(form.sellPrice), stock: Number(form.stock),
-    };
-    setProducts([...products, np]);
+    if (editing) {
+      setProducts(products.map(p => p.id === editing.id ? {
+        ...p,
+        code: form.code,
+        name: form.name,
+        category: form.category || "Sin categoría",
+        buyPrice: Number(form.buyPrice) || 0,
+        sellPrice: Number(form.sellPrice) || 0,
+      } : p));
+    } else {
+      const stock = Number(form.stock) || 0;
+      const np: Product = {
+        id: Date.now(), code: form.code, name: form.name, category: form.category || "Sin categoría",
+        buyPrice: Number(form.buyPrice) || 0, sellPrice: Number(form.sellPrice) || 0, stock,
+      };
+      let nextProducts = [...products, np];
+      let nextMovements = movements;
+      if (stock > 0) {
+        const r = pushMovements(nextProducts, movements, [{
+          productId: np.id, qty: stock, type: "ENTRADA_INICIAL", note: "Stock inicial al crear producto",
+        }]);
+        nextProducts = r.products;
+        nextMovements = r.movements;
+      }
+      setProducts(nextProducts);
+      setMovements(nextMovements);
+    }
     setShowModal(false);
-    setForm({ code: "", name: "", category: "", buyPrice: "", sellPrice: "", stock: "" });
+    setEditing(null);
+    setForm(emptyForm);
+  };
+
+  const addCategory = () => {
+    const name = newCat.trim();
+    if (!name) return;
+    if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      setNewCat("");
+      return;
+    }
+    setCategories([...categories, { id: Date.now(), name }]);
+    setNewCat("");
+  };
+
+  const removeCategory = (id: number) => {
+    const cat = categories.find(c => c.id === id);
+    if (!cat) return;
+    if (products.some(p => p.category === cat.name)) return;
+    setCategories(categories.filter(c => c.id !== id));
+  };
+
+  const handleImport = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        setImportMsg("El archivo no tiene filas de datos.");
+        return;
+      }
+      const header = lines[0].toLowerCase().split(",").map(h => h.trim().replace(/^"|"$/g, ""));
+      const idx = (names: string[]) => header.findIndex(h => names.includes(h));
+      const iCode = idx(["codigo", "code", "código"]);
+      const iName = idx(["nombre", "name"]);
+      const iCat = idx(["categoria", "categoría", "category"]);
+      const iBuy = idx(["precio_compra", "buyprice", "p_compra"]);
+      const iSell = idx(["precio_venta", "sellprice", "p_venta"]);
+      const iStock = idx(["stock", "stock_inicial", "cantidad"]);
+      if (iCode < 0 || iName < 0) {
+        setImportMsg("CSV inválido. Encabezados mínimos: codigo, nombre");
+        return;
+      }
+      let nextProducts = [...products];
+      let nextCats = [...categories];
+      const stockEntries: { productId: number; qty: number; type: MovementType; note: string }[] = [];
+      let added = 0;
+      let updated = 0;
+      for (const line of lines.slice(1)) {
+        const cols = line.split(",").map(c => c.trim().replace(/^"|"$/g, ""));
+        const code = cols[iCode];
+        const name = cols[iName];
+        if (!code || !name) continue;
+        const category = (iCat >= 0 ? cols[iCat] : "") || "Sin categoría";
+        const buyPrice = Number(iBuy >= 0 ? cols[iBuy] : 0) || 0;
+        const sellPrice = Number(iSell >= 0 ? cols[iSell] : 0) || 0;
+        const stock = Number(iStock >= 0 ? cols[iStock] : 0) || 0;
+        if (!nextCats.some(c => c.name.toLowerCase() === category.toLowerCase())) {
+          nextCats = [...nextCats, { id: Date.now() + nextCats.length, name: category }];
+        }
+        const existing = nextProducts.find(p => p.code === code);
+        if (existing) {
+          nextProducts = nextProducts.map(p => p.code === code
+            ? { ...p, name, category, buyPrice, sellPrice }
+            : p);
+          updated++;
+        } else {
+          const np: Product = { id: Date.now() + added, code, name, category, buyPrice, sellPrice, stock: 0 };
+          nextProducts = [...nextProducts, np];
+          if (stock > 0) {
+            stockEntries.push({ productId: np.id, qty: stock, type: "IMPORTACION", note: "Importación masiva CSV" });
+          }
+          added++;
+        }
+      }
+      const r = pushMovements(nextProducts, movements, stockEntries);
+      setCategories(nextCats);
+      setProducts(r.products);
+      setMovements(r.movements);
+      setImportMsg(`Importación lista: ${added} nuevos, ${updated} actualizados.`);
+    };
+    reader.readAsText(file);
   };
 
   return (
     <div className="p-6 flex flex-col gap-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Productos</h1>
-          <p className="text-slate-500 text-sm">{products.length} productos registrados</p>
+          <p className="text-slate-500 text-sm">{products.length} productos · {categories.length} categorías</p>
         </div>
-        <Button onClick={() => setShowModal(true)}>+ Agregar producto</Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="secondary" onClick={() => setShowCats(true)}>Categorías</Button>
+          <Button variant="secondary" onClick={() => importRef.current?.click()}>Importar CSV</Button>
+          <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
+          <Button onClick={openCreate}>+ Agregar producto</Button>
+        </div>
       </div>
 
-      <div className="flex gap-3">
+      {importMsg && (
+        <div className="bg-blue-50 text-blue-700 rounded-xl px-4 py-3 text-sm flex justify-between items-center">
+          <span>{importMsg}</span>
+          <button onClick={() => setImportMsg(null)} className="text-blue-500 hover:text-blue-800">Cerrar</button>
+        </div>
+      )}
+
+      <div className="flex gap-3 flex-wrap">
         <Input placeholder="Buscar por nombre o código..." value={search} onChange={e => setSearch(e.target.value)} className="w-64" />
         <Select value={catFilter} onChange={e => setCatFilter(e.target.value)}>
-          {categories.map(c => <option key={c}>{c}</option>)}
+          {filterOpts.map(c => <option key={c}>{c}</option>)}
         </Select>
       </div>
 
@@ -351,7 +655,7 @@ function Productos({ products, setProducts }: { products: Product[]; setProducts
                   <span className={`font-bold ${p.stock < 5 ? "text-red-600" : p.stock < 15 ? "text-amber-600" : "text-emerald-600"}`}>{p.stock}</span>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button className="text-xs text-blue-600 hover:underline">Editar</button>
+                  <button onClick={() => openEdit(p)} className="text-xs text-blue-600 hover:underline">Editar</button>
                 </td>
               </tr>
             ))}
@@ -361,20 +665,281 @@ function Productos({ products, setProducts }: { products: Product[]; setProducts
       </Card>
 
       {showModal && (
-        <Modal title="Agregar producto" onClose={() => setShowModal(false)}>
+        <Modal title={editing ? "Editar producto" : "Agregar producto"} onClose={() => setShowModal(false)}>
           <div className="grid grid-cols-2 gap-3">
             <Input label="Nombre del producto" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="col-span-2" />
             <Input label="Código de barras" value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} />
-            <Input label="Categoría" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} />
+            <Select label="Categoría" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+              <option value="">Seleccionar…</option>
+              {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </Select>
             <Input label="Precio de compra (COP)" type="number" value={form.buyPrice} onChange={e => setForm({ ...form, buyPrice: e.target.value })} />
             <Input label="Precio de venta (COP)" type="number" value={form.sellPrice} onChange={e => setForm({ ...form, sellPrice: e.target.value })} />
-            <Input label="Stock inicial" type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className="col-span-2" />
+            {!editing && (
+              <Input label="Stock inicial" type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className="col-span-2" />
+            )}
+            {editing && (
+              <p className="col-span-2 text-xs text-slate-500">El stock se gestiona en Inventario (ajustes y entradas).</p>
+            )}
           </div>
           <div className="flex gap-2 justify-end mt-5">
             <Button variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Button>
-            <Button onClick={addProduct}>Guardar producto</Button>
+            <Button onClick={saveProduct}>{editing ? "Guardar cambios" : "Guardar producto"}</Button>
           </div>
         </Modal>
+      )}
+
+      {showCats && (
+        <Modal title="Categorías" onClose={() => setShowCats(false)}>
+          <div className="flex gap-2 mb-4">
+            <Input placeholder="Nueva categoría" value={newCat} onChange={e => setNewCat(e.target.value)} className="flex-1" />
+            <Button onClick={addCategory}>Agregar</Button>
+          </div>
+          <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+            {categories.map(c => {
+              const inUse = products.some(p => p.category === c.name);
+              return (
+                <div key={c.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50">
+                  <span className="text-sm font-medium text-slate-800">{c.name}</span>
+                  <button
+                    disabled={inUse}
+                    onClick={() => removeCategory(c.id)}
+                    className={`text-xs ${inUse ? "text-slate-300 cursor-not-allowed" : "text-red-500 hover:underline"}`}
+                    title={inUse ? "En uso por productos" : "Eliminar"}
+                  >
+                    {inUse ? "En uso" : "Eliminar"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-400 mt-3">CSV: codigo,nombre,categoria,precio_compra,precio_venta,stock</p>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ─── Inventario ───────────────────────────────────────────────────────────────
+
+function Inventario({ products, setProducts, movements, setMovements }: {
+  products: Product[]; setProducts: (p: Product[]) => void;
+  movements: InventoryMovement[]; setMovements: (m: InventoryMovement[]) => void;
+}) {
+  const [tab, setTab] = useState<"stock" | "ajustes" | "movimientos" | "kardex">("stock");
+  const [search, setSearch] = useState("");
+  const [adjust, setAdjust] = useState({ productId: "", qty: "", reason: "", mode: "set" as "set" | "delta" });
+  const [kardexId, setKardexId] = useState<string>("");
+
+  const filteredStock = products.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) || p.code.includes(search)
+  );
+
+  const applyAdjust = () => {
+    const productId = Number(adjust.productId);
+    const p = products.find(x => x.id === productId);
+    if (!p || !adjust.qty) return;
+    const value = Number(adjust.qty);
+    if (!Number.isFinite(value)) return;
+    const delta = adjust.mode === "set" ? value - p.stock : value;
+    if (delta === 0) return;
+    const r = pushMovements(products, movements, [{
+      productId,
+      qty: delta,
+      type: "AJUSTE",
+      note: adjust.reason || (adjust.mode === "set" ? `Ajuste a cantidad ${value}` : `Ajuste relativo ${delta > 0 ? "+" : ""}${delta}`),
+      ref: "AJUSTE",
+    }]);
+    setProducts(r.products);
+    setMovements(r.movements);
+    setAdjust({ productId: "", qty: "", reason: "", mode: "set" });
+  };
+
+  const exportGeneral = () => {
+    downloadCsv(
+      `inventario-general-${todayStr()}.csv`,
+      ["codigo", "nombre", "categoria", "stock", "precio_compra", "precio_venta", "valor_inventario"],
+      products.map(p => [p.code, p.name, p.category, p.stock, p.buyPrice, p.sellPrice, p.stock * p.buyPrice]),
+    );
+  };
+
+  const exportMovements = () => {
+    downloadCsv(
+      `movimientos-inventario-${todayStr()}.csv`,
+      ["fecha", "codigo", "producto", "tipo", "cantidad", "saldo", "nota", "referencia"],
+      movements.map(m => [m.date, m.productCode, m.productName, movementLabel[m.type], m.qty, m.balanceAfter, m.note, m.ref ?? ""]),
+    );
+  };
+
+  const exportKardex = () => {
+    const pid = Number(kardexId);
+    const list = movements.filter(m => m.productId === pid).slice().reverse();
+    const p = products.find(x => x.id === pid);
+    if (!p) return;
+    downloadCsv(
+      `kardex-${p.code}-${todayStr()}.csv`,
+      ["fecha", "tipo", "entrada", "salida", "saldo", "nota", "referencia"],
+      list.map(m => [
+        m.date,
+        movementLabel[m.type],
+        m.qty > 0 ? m.qty : "",
+        m.qty < 0 ? Math.abs(m.qty) : "",
+        m.balanceAfter,
+        m.note,
+        m.ref ?? "",
+      ]),
+    );
+  };
+
+  const tabs: { id: typeof tab; label: string }[] = [
+    { id: "stock", label: "Stock actual" },
+    { id: "ajustes", label: "Ajustes" },
+    { id: "movimientos", label: "Movimientos" },
+    { id: "kardex", label: "Kardex" },
+  ];
+
+  return (
+    <div className="p-6 flex flex-col gap-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Inventario</h1>
+          <p className="text-slate-500 text-sm">{products.length} productos · {movements.length} movimientos</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="secondary" size="sm" onClick={exportGeneral}>Exportar inventario</Button>
+          <Button variant="secondary" size="sm" onClick={exportMovements}>Exportar movimientos</Button>
+        </div>
+      </div>
+
+      <div className="flex gap-1 bg-white border border-slate-100 rounded-xl p-1 w-fit flex-wrap">
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${tab === t.id ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "stock" && (
+        <>
+          <Input placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} className="w-72" />
+          <Card className="overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  {["Código", "Producto", "Categoría", "Stock", "Valor (costo)"].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredStock.map(p => (
+                  <tr key={p.id} className="border-b border-slate-50">
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{p.code}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">{p.name}</td>
+                    <td className="px-4 py-3"><Badge color="gray">{p.category}</Badge></td>
+                    <td className={`px-4 py-3 font-bold ${p.stock < 5 ? "text-red-600" : "text-emerald-600"}`}>{p.stock}</td>
+                    <td className="px-4 py-3 text-slate-600">{fmt(p.stock * p.buyPrice)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </>
+      )}
+
+      {tab === "ajustes" && (
+        <Card className="p-5 max-w-xl">
+          <h2 className="font-bold text-slate-800 mb-4">Ajuste de inventario</h2>
+          <div className="flex flex-col gap-3">
+            <Select label="Producto" value={adjust.productId} onChange={e => setAdjust({ ...adjust, productId: e.target.value })}>
+              <option value="">Seleccionar producto…</option>
+              {products.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name} (stock {p.stock})</option>)}
+            </Select>
+            <Select label="Tipo de ajuste" value={adjust.mode} onChange={e => setAdjust({ ...adjust, mode: e.target.value as "set" | "delta" })}>
+              <option value="set">Fijar cantidad absoluta</option>
+              <option value="delta">Sumar / restar cantidad</option>
+            </Select>
+            <Input
+              label={adjust.mode === "set" ? "Nueva cantidad" : "Cantidad (+ entrada / − salida)"}
+              type="number"
+              value={adjust.qty}
+              onChange={e => setAdjust({ ...adjust, qty: e.target.value })}
+            />
+            <Input label="Motivo" value={adjust.reason} onChange={e => setAdjust({ ...adjust, reason: e.target.value })} placeholder="Ej. conteo físico, merma, daño…" />
+            <Button onClick={applyAdjust} disabled={!adjust.productId || !adjust.qty}>Registrar ajuste</Button>
+          </div>
+        </Card>
+      )}
+
+      {tab === "movimientos" && (
+        <Card className="overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100">
+                {["Fecha", "Producto", "Tipo", "Cant.", "Saldo", "Nota", "Ref."].map(h => (
+                  <th key={h} className="px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {movements.map(m => (
+                <tr key={m.id} className="border-b border-slate-50">
+                  <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">{m.date}</td>
+                  <td className="px-3 py-2.5">
+                    <p className="font-medium text-slate-800">{m.productName}</p>
+                    <p className="text-xs font-mono text-slate-400">{m.productCode}</p>
+                  </td>
+                  <td className="px-3 py-2.5"><Badge color={m.qty >= 0 ? "green" : "red"}>{movementLabel[m.type]}</Badge></td>
+                  <td className={`px-3 py-2.5 font-bold ${m.qty >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    {m.qty > 0 ? `+${m.qty}` : m.qty}
+                  </td>
+                  <td className="px-3 py-2.5 text-slate-700">{m.balanceAfter}</td>
+                  <td className="px-3 py-2.5 text-slate-500 text-xs">{m.note}</td>
+                  <td className="px-3 py-2.5 text-xs font-mono text-slate-400">{m.ref ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {movements.length === 0 && <p className="text-center text-slate-400 py-10 text-sm">Sin movimientos</p>}
+        </Card>
+      )}
+
+      {tab === "kardex" && (
+        <div className="flex flex-col gap-4">
+          <div className="flex gap-3 items-end flex-wrap">
+            <Select label="Producto" value={kardexId} onChange={e => setKardexId(e.target.value)} className="min-w-72">
+              <option value="">Seleccionar producto…</option>
+              {products.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+            </Select>
+            <Button variant="secondary" onClick={exportKardex} disabled={!kardexId}>Exportar kardex</Button>
+          </div>
+          {kardexId && (
+            <Card className="overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    {["Fecha", "Tipo", "Entrada", "Salida", "Saldo", "Nota"].map(h => (
+                      <th key={h} className="px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {movements.filter(m => m.productId === Number(kardexId)).slice().reverse().map(m => (
+                    <tr key={m.id} className="border-b border-slate-50">
+                      <td className="px-3 py-2.5 text-xs text-slate-500">{m.date}</td>
+                      <td className="px-3 py-2.5"><Badge color="blue">{movementLabel[m.type]}</Badge></td>
+                      <td className="px-3 py-2.5 text-emerald-600 font-semibold">{m.qty > 0 ? m.qty : "—"}</td>
+                      <td className="px-3 py-2.5 text-red-600 font-semibold">{m.qty < 0 ? Math.abs(m.qty) : "—"}</td>
+                      <td className="px-3 py-2.5 font-bold text-slate-800">{m.balanceAfter}</td>
+                      <td className="px-3 py-2.5 text-xs text-slate-500">{m.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          )}
+        </div>
       )}
     </div>
   );
@@ -491,33 +1056,53 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
 
 // ─── Suppliers ────────────────────────────────────────────────────────────────
 
-function Proveedores({ suppliers, setSuppliers, setProducts, products }: {
+function Proveedores({ suppliers, setSuppliers, setProducts, products, movements, setMovements }: {
   suppliers: Supplier[]; setSuppliers: (s: Supplier[]) => void;
   products: Product[]; setProducts: (p: Product[]) => void;
+  movements: InventoryMovement[]; setMovements: (m: InventoryMovement[]) => void;
 }) {
   const [selected, setSelected] = useState<Supplier | null>(null);
   const [showOrder, setShowOrder] = useState(false);
-  const [order, setOrder] = useState({ product: "", qty: "", unitPrice: "" });
+  const [order, setOrder] = useState({ productId: "", qty: "", unitPrice: "", invoice: "" });
   const [showNew, setShowNew] = useState(false);
   const [newSupp, setNewSupp] = useState({ name: "", phone: "", products: "" });
 
   const confirmOrder = () => {
-    if (!selected || !order.product || !order.qty || !order.unitPrice) return;
+    if (!selected || !order.productId || !order.qty || !order.unitPrice) return;
+    const product = products.find(p => p.id === Number(order.productId));
+    if (!product) return;
     const qty = Number(order.qty);
     const unitPrice = Number(order.unitPrice);
     const price = qty * unitPrice;
+    const invoice = order.invoice.trim() || `OC-${Date.now().toString().slice(-6)}`;
     const updated = suppliers.map(s => s.id === selected.id
-      ? { ...s, orders: [...s.orders, { date: "2026-09-15", product: order.product, qty, unitPrice, price }] }
+      ? {
+        ...s,
+        orders: [...s.orders, {
+          date: todayStr(),
+          product: product.name,
+          productId: product.id,
+          qty,
+          unitPrice,
+          price,
+          invoice,
+        }],
+      }
       : s);
     setSuppliers(updated);
     setSelected(updated.find(s => s.id === selected.id)!);
-    // Update stock
-    const updatedProducts = products.map(p =>
-      p.name.toLowerCase().includes(order.product.toLowerCase()) ? { ...p, stock: p.stock + qty } : p
-    );
-    setProducts(updatedProducts);
+    const r = pushMovements(products, movements, [{
+      productId: product.id,
+      qty,
+      type: "ENTRADA_COMPRA",
+      note: `Factura ${invoice} · ${selected.name}`,
+      ref: invoice,
+    }]);
+    // Actualiza costo de compra con el precio unitario de la factura
+    setProducts(r.products.map(p => p.id === product.id ? { ...p, buyPrice: unitPrice } : p));
+    setMovements(r.movements);
     setShowOrder(false);
-    setOrder({ product: "", qty: "", unitPrice: "" });
+    setOrder({ productId: "", qty: "", unitPrice: "", invoice: "" });
   };
 
   const addSupplier = () => {
@@ -566,11 +1151,12 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products }: {
               <Card className="overflow-hidden flex-1">
                 <div className="p-4 border-b border-slate-100 font-semibold text-slate-700 text-sm">Órdenes de compra</div>
                 <table className="w-full text-sm">
-                  <thead><tr className="bg-slate-50"><th className="px-3 py-2 text-left text-xs text-slate-500">Fecha</th><th className="px-3 py-2 text-left text-xs text-slate-500">Producto</th><th className="px-3 py-2 text-center text-xs text-slate-500">Cant.</th><th className="px-3 py-2 text-right text-xs text-slate-500">Precios</th></tr></thead>
+                  <thead><tr className="bg-slate-50"><th className="px-3 py-2 text-left text-xs text-slate-500">Fecha</th><th className="px-3 py-2 text-left text-xs text-slate-500">Factura</th><th className="px-3 py-2 text-left text-xs text-slate-500">Producto</th><th className="px-3 py-2 text-center text-xs text-slate-500">Cant.</th><th className="px-3 py-2 text-right text-xs text-slate-500">Precios</th></tr></thead>
                   <tbody>
                     {selected.orders.map((o, i) => (
                       <tr key={i} className="border-t border-slate-50">
                         <td className="px-3 py-2.5 text-slate-500 text-xs">{o.date}</td>
+                        <td className="px-3 py-2.5 text-xs font-mono text-slate-500">{o.invoice ?? "—"}</td>
                         <td className="px-3 py-2.5 text-slate-700">{o.product}</td>
                         <td className="px-3 py-2.5 text-center font-bold text-slate-700">{o.qty}</td>
                         <td className="px-3 py-2.5 text-right">
@@ -589,9 +1175,20 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products }: {
       </div>
 
       {showOrder && selected && (
-        <Modal title={`Nueva orden — ${selected.name}`} onClose={() => setShowOrder(false)}>
+        <Modal title={`Nueva factura / orden — ${selected.name}`} onClose={() => setShowOrder(false)}>
           <div className="flex flex-col gap-3">
-            <Input label="Producto" placeholder="Nombre del producto comprado" value={order.product} onChange={e => setOrder({ ...order, product: e.target.value })} />
+            <Input label="Nº factura del proveedor" placeholder="Ej. FC-4580" value={order.invoice} onChange={e => setOrder({ ...order, invoice: e.target.value })} />
+            <Select label="Producto del catálogo" value={order.productId} onChange={e => {
+              const p = products.find(x => x.id === Number(e.target.value));
+              setOrder({
+                ...order,
+                productId: e.target.value,
+                unitPrice: p ? String(p.buyPrice) : order.unitPrice,
+              });
+            }}>
+              <option value="">Seleccionar producto…</option>
+              {products.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+            </Select>
             <div className="grid grid-cols-2 gap-3">
               <Input label="Cantidad" type="number" min="1" value={order.qty} onChange={e => setOrder({ ...order, qty: e.target.value })} />
               <Input label="Precio unitario (COP)" type="number" min="0" value={order.unitPrice} onChange={e => setOrder({ ...order, unitPrice: e.target.value })} />
@@ -603,12 +1200,12 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products }: {
               </div>
             </div>
             <div className="bg-blue-50 text-blue-700 rounded-lg px-3 py-2 text-xs">
-              Al confirmar, se sumará la cantidad al stock del producto coincidente.
+              Al confirmar se crea un movimiento ENTRADA_COMPRA y se actualiza el inventario automáticamente.
             </div>
           </div>
           <div className="flex gap-2 justify-end mt-5">
             <Button variant="ghost" onClick={() => setShowOrder(false)}>Cancelar</Button>
-            <Button onClick={confirmOrder}>Confirmar orden</Button>
+            <Button onClick={confirmOrder}>Confirmar y actualizar inventario</Button>
           </div>
         </Modal>
       )}
@@ -632,17 +1229,66 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products }: {
 
 // ─── POS / Ventas ─────────────────────────────────────────────────────────────
 
-function Ventas({ products, setProducts, clients, setClients }: {
+const createTicket = (num = 1): PosTicket => ({
+  id: Date.now() + num,
+  label: `Ticket ${num}`,
+  cart: [],
+  payment: null,
+  clientId: null,
+});
+
+const nextTicketNum = (list: PosTicket[]) =>
+  list.reduce((max, t) => {
+    const m = t.label.match(/Ticket (\d+)/);
+    return m ? Math.max(max, Number(m[1])) : max;
+  }, 0) + 1;
+
+function Ventas({ products, setProducts, clients, setClients, movements, setMovements }: {
   products: Product[]; setProducts: (p: Product[]) => void;
   clients: Client[]; setClients: (c: Client[]) => void;
+  movements: InventoryMovement[]; setMovements: (m: InventoryMovement[]) => void;
 }) {
+  const [tickets, setTickets] = useState<PosTicket[]>(() => [createTicket(1)]);
+  const [activeId, setActiveId] = useState(tickets[0].id);
   const [search, setSearch] = useState("");
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [payment, setPayment] = useState<"efectivo" | "tarjeta" | null>(null);
-  const [clientId, setClientId] = useState<number | null>(null);
   const [weight, setWeight] = useState("");
-  const [showTicket, setShowTicket] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [amountPaid, setAmountPaid] = useState("");
+  const [lastSale, setLastSale] = useState<SaleReceipt | null>(null);
   const barcodeRef = useRef<HTMLInputElement>(null);
+
+  const active = tickets.find(t => t.id === activeId) ?? tickets[0];
+  const cart = active?.cart ?? [];
+  const payment = active?.payment ?? null;
+  const clientId = active?.clientId ?? null;
+
+  const updateActive = (patch: Partial<PosTicket> | ((t: PosTicket) => Partial<PosTicket>)) => {
+    setTickets(prev => prev.map(t => {
+      if (t.id !== activeId) return t;
+      const next = typeof patch === "function" ? patch(t) : patch;
+      return { ...t, ...next };
+    }));
+  };
+
+  const openTicket = () => {
+    const t = createTicket(nextTicketNum(tickets));
+    setTickets(prev => [...prev, t]);
+    setActiveId(t.id);
+    setSearch("");
+  };
+
+  const closeTicket = (id: number) => {
+    setTickets(prev => {
+      if (prev.length === 1) {
+        const fresh = createTicket(1);
+        setActiveId(fresh.id);
+        return [fresh];
+      }
+      const next = prev.filter(t => t.id !== id);
+      if (id === activeId) setActiveId(next[next.length - 1].id);
+      return next;
+    });
+  };
 
   const filtered = search.length > 1
     ? products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.code === search)
@@ -651,26 +1297,68 @@ function Ventas({ products, setProducts, clients, setClients }: {
   const addToCart = (p: Product, weightKg?: number) => {
     if (p.stock <= 0) return;
     const qty = weightKg || 1;
-    setCart(prev => {
-      const ex = prev.find(i => i.product.id === p.id);
-      if (ex) return prev.map(i => i.product.id === p.id ? { ...i, qty: i.qty + qty } : i);
-      return [...prev, { product: p, qty, weight: weightKg }];
+    updateActive(t => {
+      const ex = t.cart.find(i => i.product.id === p.id);
+      const cart = ex
+        ? t.cart.map(i => i.product.id === p.id ? { ...i, qty: i.qty + qty } : i)
+        : [...t.cart, { product: p, qty, weight: weightKg }];
+      return { cart };
     });
     setSearch("");
   };
 
-  const removeFromCart = (id: number) => setCart(prev => prev.filter(i => i.product.id !== id));
-  const total = cart.reduce((s, i) => s + i.product.sellPrice * i.qty, 0);
+  const removeFromCart = (id: number) =>
+    updateActive(t => ({ cart: t.cart.filter(i => i.product.id !== id) }));
 
-  const confirmSale = () => {
+  const total = cart.reduce((s, i) => s + i.product.sellPrice * i.qty, 0);
+  const paidNum = Number(amountPaid);
+  const change = Number.isFinite(paidNum) ? Math.max(0, paidNum - total) : 0;
+  const canConfirm =
+    !!payment &&
+    cart.length > 0 &&
+    Number.isFinite(paidNum) &&
+    paidNum >= total &&
+    amountPaid !== "";
+
+  const openCheckout = () => {
     if (!payment || cart.length === 0) return;
-    // Deduct stock
-    const updatedProducts = products.map(p => {
-      const item = cart.find(i => i.product.id === p.id);
-      return item ? { ...p, stock: Math.max(0, p.stock - Math.ceil(item.qty)) } : p;
-    });
-    setProducts(updatedProducts);
-    // Update client history
+    setAmountPaid(payment === "tarjeta" ? String(total) : "");
+    setShowCheckout(true);
+  };
+
+  const confirmSale = (withPrint: boolean) => {
+    if (!canConfirm || !payment || !active) return;
+    const code = `VTA-${Date.now().toString().slice(-6)}`;
+    const clientName = clientId ? clients.find(c => c.id === clientId)?.name : undefined;
+    const sale: SaleReceipt = {
+      code,
+      items: cart.map(i => ({
+        name: i.product.name,
+        qty: i.qty,
+        weight: i.weight,
+        lineTotal: i.product.sellPrice * i.qty,
+      })),
+      total,
+      paid: paidNum,
+      change,
+      payment,
+      clientName,
+      printed: withPrint,
+    };
+
+    openCashDrawer();
+    if (withPrint) printSaleTicket(sale);
+
+    const stockEntries = cart.map(item => ({
+      productId: item.product.id,
+      qty: -Math.ceil(item.qty),
+      type: "SALIDA_VENTA" as MovementType,
+      note: `Venta ${code}`,
+      ref: code,
+    }));
+    const r = pushMovements(products, movements, stockEntries);
+    setProducts(r.products);
+    setMovements(r.movements);
     if (clientId) {
       const itemsStr = cart.map(i => `${i.product.name} ×${i.qty}`).join(", ");
       const updatedClients = clients.map(c => c.id === clientId
@@ -678,22 +1366,41 @@ function Ventas({ products, setProducts, clients, setClients }: {
         : c);
       setClients(updatedClients);
     }
-    setShowTicket(true);
-    setCart([]);
-    setPayment(null);
-    setClientId(null);
+    setShowCheckout(false);
+    setAmountPaid("");
+    setLastSale(sale);
+    closeTicket(active.id);
   };
 
-  if (showTicket) return (
+  if (lastSale) return (
     <div className="p-6 flex flex-col items-center justify-center min-h-[70vh] gap-5">
       <div className="bg-white rounded-2xl shadow-lg p-8 max-w-sm w-full text-center">
         <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
         <h2 className="text-xl font-bold text-slate-800 mb-1">Venta confirmada</h2>
-        <p className="text-slate-500 text-sm mb-4">Ticket #VTA-{Date.now().toString().slice(-6)}</p>
-        <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-600 mb-4">Tienda Central · 2026-09-15 · 14:32</div>
+        <p className="text-slate-500 text-sm mb-4">Ticket #{lastSale.code}</p>
+        <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-600 mb-3 space-y-1.5 text-left">
+          <div className="flex justify-between"><span>Total</span><span className="font-semibold">{fmt(lastSale.total)}</span></div>
+          <div className="flex justify-between"><span>Pagó</span><span>{fmt(lastSale.paid)}</span></div>
+          <div className="flex justify-between text-emerald-700 font-bold"><span>Cambio</span><span>{fmt(lastSale.change)}</span></div>
+        </div>
+        <div className="bg-amber-50 text-amber-800 rounded-lg px-3 py-2 text-xs mb-2">
+          Cajón monedero abierto
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          {lastSale.printed ? "Ticket enviado a impresión" : "Venta sin impresión de ticket"}
+          {" · "}
+          {tickets.length} ticket{tickets.length === 1 ? "" : "s"} abierto{tickets.length === 1 ? "" : "s"}
+        </p>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" className="flex-1" onClick={() => setShowTicket(false)}>Nueva venta</Button>
-          <Button size="sm" className="flex-1" onClick={() => { window.print(); }}>Imprimir ticket</Button>
+          <Button variant="secondary" size="sm" className="flex-1" onClick={() => setLastSale(null)}>Continuar</Button>
+          {!lastSale.printed && (
+            <Button size="sm" className="flex-1" onClick={() => {
+              printSaleTicket({ ...lastSale, printed: true });
+              setLastSale({ ...lastSale, printed: true });
+            }}>
+              Imprimir ahora
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -703,7 +1410,12 @@ function Ventas({ products, setProducts, clients, setClients }: {
     <div className="p-6 flex gap-5 h-full">
       {/* Left: search + products */}
       <div className="flex-1 flex flex-col gap-4">
-        <h1 className="text-2xl font-bold text-slate-800">Punto de Venta</h1>
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold text-slate-800">Punto de Venta</h1>
+          <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg font-medium">
+            {tickets.length} ticket{tickets.length === 1 ? "" : "s"} abierto{tickets.length === 1 ? "" : "s"}
+          </span>
+        </div>
         {/* Barcode / search */}
         <div className="relative">
           <input
@@ -747,7 +1459,7 @@ function Ventas({ products, setProducts, clients, setClients }: {
         {/* Client selector */}
         <Card className="p-4">
           <p className="text-sm font-semibold text-slate-700 mb-2">Cliente (opcional)</p>
-          <select value={clientId ?? ""} onChange={e => setClientId(e.target.value ? Number(e.target.value) : null)}
+          <select value={clientId ?? ""} onChange={e => updateActive({ clientId: e.target.value ? Number(e.target.value) : null })}
             className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
             <option value="">Sin cliente registrado</option>
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -757,10 +1469,48 @@ function Ventas({ products, setProducts, clients, setClients }: {
 
       {/* Right: Cart */}
       <div className="w-80 flex flex-col gap-3">
+        {/* Ticket tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          {tickets.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setActiveId(t.id)}
+              className={`group flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-xl text-xs font-semibold transition border ${
+                t.id === activeId
+                  ? "bg-blue-700 text-white border-blue-700"
+                  : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
+              }`}
+            >
+              <span>{t.label}</span>
+              {t.cart.length > 0 && (
+                <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] flex items-center justify-center ${
+                  t.id === activeId ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-500"
+                }`}>{t.cart.length}</span>
+              )}
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={e => { e.stopPropagation(); closeTicket(t.id); }}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); closeTicket(t.id); } }}
+                className={`ml-0.5 w-4 h-4 rounded flex items-center justify-center text-sm leading-none ${
+                  t.id === activeId ? "hover:bg-blue-600" : "hover:bg-slate-100 text-slate-400"
+                }`}
+              >×</span>
+            </button>
+          ))}
+          <button
+            onClick={openTicket}
+            title="Nuevo ticket"
+            className="shrink-0 w-8 h-8 rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-700 hover:bg-blue-50 text-lg font-semibold flex items-center justify-center transition"
+          >+</button>
+        </div>
+
         <Card className="p-4 flex-1 flex flex-col">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-bold text-slate-800">Carrito</h2>
-            {cart.length > 0 && <button onClick={() => setCart([])} className="text-xs text-red-400 hover:text-red-600">Vaciar</button>}
+            <h2 className="font-bold text-slate-800">{active?.label ?? "Carrito"}</h2>
+            {cart.length > 0 && (
+              <button onClick={() => updateActive({ cart: [] })} className="text-xs text-red-400 hover:text-red-600">Vaciar</button>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -773,10 +1523,14 @@ function Ventas({ products, setProducts, clients, setClients }: {
                     <p className="text-xs text-slate-400">{item.weight ? `${item.qty}kg` : `×${item.qty}`} · {fmt(item.product.sellPrice * item.qty)}</p>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => setCart(prev => prev.map(i => i.product.id === item.product.id ? { ...i, qty: Math.max(1, i.qty - 1) } : i))}
+                    <button onClick={() => updateActive(t => ({
+                      cart: t.cart.map(i => i.product.id === item.product.id ? { ...i, qty: Math.max(1, i.qty - 1) } : i),
+                    }))}
                       className="w-6 h-6 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 text-sm flex items-center justify-center">−</button>
                     <span className="text-sm w-5 text-center font-semibold">{item.weight ? item.qty.toFixed(2) : item.qty}</span>
-                    <button onClick={() => setCart(prev => prev.map(i => i.product.id === item.product.id ? { ...i, qty: i.qty + (item.weight ? 0.1 : 1) } : i))}
+                    <button onClick={() => updateActive(t => ({
+                      cart: t.cart.map(i => i.product.id === item.product.id ? { ...i, qty: i.qty + (item.weight ? 0.1 : 1) } : i),
+                    }))}
                       className="w-6 h-6 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 text-sm flex items-center justify-center">+</button>
                     <button onClick={() => removeFromCart(item.product.id)} className="w-6 h-6 text-red-400 hover:text-red-600 ml-1 opacity-0 group-hover:opacity-100 transition">×</button>
                   </div>
@@ -799,19 +1553,73 @@ function Ventas({ products, setProducts, clients, setClients }: {
             <p className="text-xs font-semibold text-slate-500 mb-2">Método de pago</p>
             <div className="grid grid-cols-2 gap-2 mb-3">
               {(["efectivo", "tarjeta"] as const).map(m => (
-                <button key={m} onClick={() => setPayment(m)}
+                <button key={m} onClick={() => updateActive({ payment: m })}
                   className={`py-2.5 rounded-xl text-sm font-semibold capitalize transition border-2 ${payment === m ? "border-blue-600 bg-blue-700 text-white" : "border-slate-200 text-slate-600 hover:border-blue-400"}`}>
-                  {m === "efectivo" ? "💵 Efectivo" : "💳 Tarjeta"}
+                  {m === "efectivo" ? "Efectivo" : "Tarjeta"}
                 </button>
               ))}
             </div>
 
-            <Button onClick={confirmSale} disabled={cart.length === 0 || !payment} className="w-full" size="lg">
-              Confirmar venta
+            <Button onClick={openCheckout} disabled={cart.length === 0 || !payment} className="w-full" size="lg">
+              Cobrar
             </Button>
           </div>
         </Card>
       </div>
+
+      {showCheckout && (
+        <Modal title="Cobrar venta" onClose={() => setShowCheckout(false)}>
+          <div className="flex flex-col gap-4">
+            <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Método</span>
+                <span className="font-semibold text-slate-800 capitalize">{payment}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 text-sm">Total a pagar</span>
+                <span className="text-2xl font-bold text-blue-700">{fmt(total)}</span>
+              </div>
+            </div>
+
+            <Input
+              label="¿Con cuánto paga? (COP)"
+              type="number"
+              min={total}
+              step="100"
+              value={amountPaid}
+              onChange={e => setAmountPaid(e.target.value)}
+              placeholder={String(total)}
+              autoFocus
+            />
+
+            <div className={`rounded-xl px-4 py-3 flex justify-between items-center ${
+              canConfirm ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
+            }`}>
+              <span className="text-sm font-medium">Cambio</span>
+              <span className="text-xl font-bold">{canConfirm ? fmt(change) : "—"}</span>
+            </div>
+
+            {amountPaid !== "" && paidNum < total && (
+              <p className="text-xs text-red-600">El monto pagado debe ser mayor o igual al total.</p>
+            )}
+
+            <p className="text-xs text-slate-400">
+              Al confirmar se abrirá el cajón monedero.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 mt-5">
+            <Button onClick={() => confirmSale(true)} disabled={!canConfirm} className="w-full" size="lg">
+              Confirmar e imprimir ticket
+            </Button>
+            <Button variant="secondary" onClick={() => confirmSale(false)} disabled={!canConfirm} className="w-full">
+              Confirmar sin imprimir
+            </Button>
+            <Button variant="ghost" onClick={() => setShowCheckout(false)} className="w-full">
+              Cancelar
+            </Button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -823,6 +1631,7 @@ function Integraciones() {
     { id: "barcode", label: "Lector de código de barras", icon: "▥", connected: true, port: "USB-HID" },
     { id: "scale", label: "Balanza digital", icon: "⊖", connected: false, port: "COM3" },
     { id: "printer", label: "Impresora de tickets", icon: "⊟", connected: true, port: "192.168.1.50" },
+    { id: "drawer", label: "Cajón monedero", icon: "▣", connected: true, port: "RJ11 · vía impresora" },
     { id: "dian", label: "DIAN Facturación Electrónica", icon: "◫", connected: true, port: "API REST" },
   ]);
 
@@ -896,6 +1705,8 @@ function Integraciones() {
 export default function App() {
   const [module, setModule] = useState<Module>("dashboard");
   const [products, setProducts] = useState<Product[]>(initProducts);
+  const [categories, setCategories] = useState<Category[]>(initCategories);
+  const [movements, setMovements] = useState<InventoryMovement[]>(initMovements);
   const [clients, setClients] = useState<Client[]>(initClients);
   const [suppliers, setSuppliers] = useState<Supplier[]>(initSuppliers);
 
@@ -904,10 +1715,34 @@ export default function App() {
       <Sidebar active={module} onNav={setModule} />
       <main className="flex-1 overflow-auto bg-[#F0F4FF]">
         {module === "dashboard" && <Dashboard products={products} />}
-        {module === "productos" && <Productos products={products} setProducts={setProducts} />}
+        {module === "productos" && (
+          <Productos
+            products={products} setProducts={setProducts}
+            categories={categories} setCategories={setCategories}
+            movements={movements} setMovements={setMovements}
+          />
+        )}
+        {module === "inventario" && (
+          <Inventario
+            products={products} setProducts={setProducts}
+            movements={movements} setMovements={setMovements}
+          />
+        )}
         {module === "clientes" && <Clientes clients={clients} setClients={setClients} />}
-        {module === "proveedores" && <Proveedores suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} />}
-        {module === "ventas" && <Ventas products={products} setProducts={setProducts} clients={clients} setClients={setClients} />}
+        {module === "proveedores" && (
+          <Proveedores
+            suppliers={suppliers} setSuppliers={setSuppliers}
+            products={products} setProducts={setProducts}
+            movements={movements} setMovements={setMovements}
+          />
+        )}
+        {module === "ventas" && (
+          <Ventas
+            products={products} setProducts={setProducts}
+            clients={clients} setClients={setClients}
+            movements={movements} setMovements={setMovements}
+          />
+        )}
         {module === "integraciones" && <Integraciones />}
       </main>
     </div>
