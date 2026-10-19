@@ -1,4 +1,7 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
+import { LoginScreen } from "./components/LoginScreen";
+import { api, ApiError } from "./lib/api";
+import { restoreSession, signOut } from "./lib/auth";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer
@@ -57,69 +60,41 @@ interface PosTicket {
   clientId: number | null;
 }
 
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
+interface DashboardStats {
+  dateLabel: string;
+  today: number;
+  week: number;
+  year: number;
+  todayChange: string;
+  weekChange: string;
+  weekSeries: { label: string; amount: number }[];
+  yearSeries: { label: string; amount: number }[];
+  topProducts: Product[];
+  lowStock: Product[];
+}
 
-const initProducts: Product[] = [
-  { id: 1, code: "001", name: "Café Americano", category: "Bebidas", buyPrice: 1200, sellPrice: 3500, stock: 45 },
-  { id: 2, code: "002", name: "Empanada de pipián", category: "Comida", buyPrice: 800, sellPrice: 2500, stock: 3 },
-  { id: 3, code: "003", name: "Agua mineral 500ml", category: "Bebidas", buyPrice: 600, sellPrice: 1800, stock: 60 },
-  { id: 4, code: "004", name: "Sándwich mixto", category: "Comida", buyPrice: 2500, sellPrice: 6000, stock: 8 },
-  { id: 5, code: "005", name: "Brownie", category: "Panadería", buyPrice: 1000, sellPrice: 3000, stock: 2 },
-  { id: 6, code: "006", name: "Té verde", category: "Bebidas", buyPrice: 900, sellPrice: 2800, stock: 30 },
-  { id: 7, code: "007", name: "Queso (kg)", category: "Lácteos", buyPrice: 18000, sellPrice: 28000, stock: 12 },
-];
+interface SaleTicket {
+  ticket: string;
+  soldAt: string;
+  store: string;
+}
 
-const initClients: Client[] = [
-  { id: 1, name: "María López", phone: "3114567890", email: "maria@gmail.com", address: "Cra 5 #12-40", idNumber: "1144088123", birthDate: "1992-03-18", totalBought: 145000, lastPurchase: "2026-09-14",
-    history: [{ date: "2026-09-14", items: "Café × 2, Brownie × 1", total: 10000 }, { date: "2026-09-12", items: "Sándwich × 1, Agua × 2", total: 9600 }] },
-  { id: 2, name: "Carlos Ruiz", phone: "3009876543", email: "c.ruiz@outlook.com", address: "Calle 23 #8-15", idNumber: "1098765432", birthDate: "1988-11-02", totalBought: 98000, lastPurchase: "2026-09-13",
-    history: [{ date: "2026-09-13", items: "Café × 3, Té × 1", total: 13300 }] },
-  { id: 3, name: "Luisa Fernández", phone: "3201112233", email: "luisaf@yahoo.com", address: "Av. Roosevelt #45-10", idNumber: "3155566677", birthDate: "1996-07-25", totalBought: 220000, lastPurchase: "2026-09-15",
-    history: [{ date: "2026-09-15", items: "Queso 0.5kg, Empanada × 2", total: 19000 }] },
-  { id: 4, name: "Andrés Moreno", phone: "3158889900", email: "andres.m@empresa.co", address: "Calle 70 #3-22", idNumber: "8012345678", birthDate: "1985-01-09", totalBought: 67000, lastPurchase: "2026-09-10",
-    history: [{ date: "2026-09-10", items: "Agua × 5, Brownie × 2", total: 15000 }] },
-];
+interface IntegrationsState {
+  peripherals: { id: string; label: string; connected: boolean; port: string }[];
+  printer: { host: string; tcpPort: number; paperWidth: string };
+  dian: { nit: string; softwareId: string; softwarePin: string; environment: string };
+}
 
-const initCategories: Category[] = [
-  { id: 1, name: "Bebidas" },
-  { id: 2, name: "Comida" },
-  { id: 3, name: "Panadería" },
-  { id: 4, name: "Lácteos" },
-];
-
-const initSuppliers: Supplier[] = [
-  { id: 1, name: "Café del Norte SAS", phone: "6014441122", products: "Café, Té",
-    orders: [{ date: "2026-09-01", product: "Café Americano", productId: 1, qty: 50, unitPrice: 1200, price: 60000, invoice: "FC-1001" }] },
-  { id: 2, name: "Pan y Más Ltda.", phone: "6025556677", products: "Panadería, Empanadas",
-    orders: [{ date: "2026-09-05", product: "Brownie", productId: 5, qty: 30, unitPrice: 1000, price: 30000, invoice: "FC-2044" }] },
-  { id: 3, name: "Lácteos El Campo", phone: "3206667788", products: "Queso, Mantequilla",
-    orders: [] },
-];
-
-const initMovements: InventoryMovement[] = initProducts.map((p, i) => ({
-  id: i + 1,
-  date: "2026-09-01",
-  productId: p.id,
-  productName: p.name,
-  productCode: p.code,
-  type: "ENTRADA_INICIAL",
-  qty: p.stock,
-  balanceAfter: p.stock,
-  note: "Stock inicial del sistema",
-  ref: "INI",
-}));
-
-const salesData = [
-  { label: "Lun", amount: 185000 }, { label: "Mar", amount: 240000 }, { label: "Mié", amount: 198000 },
-  { label: "Jue", amount: 310000 }, { label: "Vie", amount: 428000 }, { label: "Sáb", amount: 512000 },
-  { label: "Hoy", amount: 287000 },
-];
-
-const monthData = [
-  { label: "Mar", amount: 4200000 }, { label: "Abr", amount: 3980000 }, { label: "May", amount: 5100000 },
-  { label: "Jun", amount: 4750000 }, { label: "Jul", amount: 5400000 }, { label: "Ago", amount: 6100000 },
-  { label: "Sep", amount: 2870000 },
-];
+const emptyStats: DashboardStats = {
+  dateLabel: "",
+  today: 0, week: 0, year: 0,
+  todayChange: "Sin comparación",
+  weekChange: "Sin comparación",
+  weekSeries: [],
+  yearSeries: [],
+  topProducts: [],
+  lowStock: [],
+};
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 
@@ -319,7 +294,7 @@ const navItems: { id: Module; label: string; icon: string }[] = [
   { id: "integraciones", label: "Integraciones", icon: "⊗" },
 ];
 
-function Sidebar({ active, onNav }: { active: Module; onNav: (m: Module) => void }) {
+function Sidebar({ active, onNav, email, onLogout }: { active: Module; onNav: (m: Module) => void; email: string; onLogout: () => void }) {
   return (
     <aside className="w-64 min-h-screen bg-blue-900 flex flex-col select-none shrink-0">
       <div className="px-6 py-6 border-b border-blue-800">
@@ -347,12 +322,18 @@ function Sidebar({ active, onNav }: { active: Module; onNav: (m: Module) => void
           </button>
         ))}
       </nav>
-      <div className="px-4 pb-5">
+      <div className="px-4 pb-5 flex flex-col gap-3">
         <div className="bg-blue-800 rounded-xl p-3 text-xs text-blue-300">
           <p className="font-semibold text-blue-200 mb-1">Tienda Central</p>
-          <p>NIT 900.123.456-1</p>
-          <p>Cali, Colombia</p>
+          <p className="truncate">{email}</p>
         </div>
+        <button
+          type="button"
+          onClick={onLogout}
+          className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-blue-100 hover:bg-blue-800 hover:text-white transition"
+        >
+          Cerrar sesión
+        </button>
       </div>
     </aside>
   );
@@ -360,25 +341,28 @@ function Sidebar({ active, onNav }: { active: Module; onNav: (m: Module) => void
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-function Dashboard({ products }: { products: Product[] }) {
+function Dashboard({ stats }: { stats: DashboardStats }) {
   const [chartView, setChartView] = useState<"semana" | "mes">("semana");
-  const data = chartView === "semana" ? salesData : monthData;
-  const lowStock = products.filter(p => p.stock < 5);
-  const topProducts = [...products].sort((a, b) => b.sellPrice - a.sellPrice).slice(0, 5);
+  const data = chartView === "semana" ? stats.weekSeries : stats.yearSeries;
+  const lowStock = stats.lowStock;
+  const topProducts = stats.topProducts;
+  const dateLabel = stats.dateLabel
+    ? new Date(`${stats.dateLabel}T12:00:00`).toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+    : "";
 
   return (
     <div className="p-6 flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-        <p className="text-slate-500 text-sm">Martes, 15 de septiembre de 2026</p>
+        <p className="text-slate-500 text-sm capitalize">{dateLabel}</p>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Ventas Hoy", value: fmt(287000), sub: "+12% vs ayer", color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Ventas Semana", value: fmt(2160000), sub: "+8% vs semana pasada", color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Ventas Año", value: fmt(38420000), sub: "Meta: $45M COP", color: "text-violet-600", bg: "bg-violet-50" },
+          { label: "Ventas Hoy", value: fmt(stats.today), sub: stats.todayChange, color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Ventas Semana", value: fmt(stats.week), sub: stats.weekChange, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Ventas Año", value: fmt(stats.year), sub: "Acumulado del año", color: "text-violet-600", bg: "bg-violet-50" },
         ].map(card => (
           <Card key={card.label} className="p-5">
             <p className="text-sm text-slate-500 font-medium mb-2">{card.label}</p>
@@ -464,6 +448,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [error, setError] = useState("");
   const [showCats, setShowCats] = useState(false);
   const [newCat, setNewCat] = useState("");
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -477,12 +462,14 @@ function Productos({ products, setProducts, categories, setCategories, movements
 
   const openCreate = () => {
     setEditing(null);
+    setError("");
     setForm({ ...emptyForm, category: categories[0]?.name ?? "" });
     setShowModal(true);
   };
 
   const openEdit = (p: Product) => {
     setEditing(p);
+    setError("");
     setForm({
       code: p.code, name: p.name, category: p.category,
       buyPrice: String(p.buyPrice), sellPrice: String(p.sellPrice), stock: String(p.stock),
@@ -490,38 +477,41 @@ function Productos({ products, setProducts, categories, setCategories, movements
     setShowModal(true);
   };
 
-  const saveProduct = () => {
+  const saveProduct = async () => {
     if (!form.name || !form.code) return;
-    if (editing) {
-      setProducts(products.map(p => p.id === editing.id ? {
-        ...p,
-        code: form.code,
-        name: form.name,
-        category: form.category || "Sin categoría",
-        buyPrice: Number(form.buyPrice) || 0,
-        sellPrice: Number(form.sellPrice) || 0,
-      } : p));
-    } else {
-      const stock = Number(form.stock) || 0;
-      const np: Product = {
-        id: Date.now(), code: form.code, name: form.name, category: form.category || "Sin categoría",
-        buyPrice: Number(form.buyPrice) || 0, sellPrice: Number(form.sellPrice) || 0, stock,
-      };
-      let nextProducts = [...products, np];
-      let nextMovements = movements;
-      if (stock > 0) {
-        const r = pushMovements(nextProducts, movements, [{
-          productId: np.id, qty: stock, type: "ENTRADA_INICIAL", note: "Stock inicial al crear producto",
-        }]);
-        nextProducts = r.products;
-        nextMovements = r.movements;
+    const body = {
+      code: form.code,
+      name: form.name,
+      category: form.category || "Sin categoría",
+      buyPrice: Number(form.buyPrice) || 0,
+      sellPrice: Number(form.sellPrice) || 0,
+      ...(editing ? {} : { stock: Number(form.stock) || 0 }),
+    };
+    try {
+      const saved = editing
+        ? await api<Product>(`/products/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) })
+        : await api<Product>("/products", { method: "POST", body: JSON.stringify(body) });
+      setProducts(editing ? products.map(item => item.id === saved.id ? saved : item) : [...products, saved]);
+      if (!editing && saved.stock > 0) {
+        setMovements([{
+          id: Date.now(),
+          date: todayStr(),
+          productId: saved.id,
+          productName: saved.name,
+          productCode: saved.code,
+          type: "ENTRADA_INICIAL",
+          qty: saved.stock,
+          balanceAfter: saved.stock,
+          note: "Stock inicial al crear producto",
+          ref: "INI",
+        }, ...movements]);
       }
-      setProducts(nextProducts);
-      setMovements(nextMovements);
+      setShowModal(false);
+      setEditing(null);
+      setForm(emptyForm);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No pudimos guardar el producto.");
     }
-    setShowModal(false);
-    setEditing(null);
-    setForm(emptyForm);
   };
 
   const addCategory = () => {
@@ -542,32 +532,29 @@ function Productos({ products, setProducts, categories, setCategories, movements
     setCategories(categories.filter(c => c.id !== id));
   };
 
-  const handleImport = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result ?? "");
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      if (lines.length < 2) {
-        setImportMsg("El archivo no tiene filas de datos.");
-        return;
-      }
-      const header = lines[0].toLowerCase().split(",").map(h => h.trim().replace(/^"|"$/g, ""));
-      const idx = (names: string[]) => header.findIndex(h => names.includes(h));
-      const iCode = idx(["codigo", "code", "código"]);
-      const iName = idx(["nombre", "name"]);
-      const iCat = idx(["categoria", "categoría", "category"]);
-      const iBuy = idx(["precio_compra", "buyprice", "p_compra"]);
-      const iSell = idx(["precio_venta", "sellprice", "p_venta"]);
-      const iStock = idx(["stock", "stock_inicial", "cantidad"]);
-      if (iCode < 0 || iName < 0) {
-        setImportMsg("CSV inválido. Encabezados mínimos: codigo, nombre");
-        return;
-      }
-      let nextProducts = [...products];
-      let nextCats = [...categories];
-      const stockEntries: { productId: number; qty: number; type: MovementType; note: string }[] = [];
-      let added = 0;
-      let updated = 0;
+  const handleImport = async (file: File) => {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) {
+      setImportMsg("El archivo no tiene filas de datos.");
+      return;
+    }
+    const header = lines[0].toLowerCase().split(",").map(h => h.trim().replace(/^"|"$/g, ""));
+    const idx = (names: string[]) => header.findIndex(h => names.includes(h));
+    const iCode = idx(["codigo", "code", "código"]);
+    const iName = idx(["nombre", "name"]);
+    const iCat = idx(["categoria", "categoría", "category"]);
+    const iBuy = idx(["precio_compra", "buyprice", "p_compra"]);
+    const iSell = idx(["precio_venta", "sellprice", "p_venta"]);
+    const iStock = idx(["stock", "stock_inicial", "cantidad"]);
+    if (iCode < 0 || iName < 0) {
+      setImportMsg("CSV inválido. Encabezados mínimos: codigo, nombre");
+      return;
+    }
+    let nextCats = [...categories];
+    let added = 0;
+    let updated = 0;
+    try {
       for (const line of lines.slice(1)) {
         const cols = line.split(",").map(c => c.trim().replace(/^"|"$/g, ""));
         const code = cols[iCode];
@@ -580,29 +567,29 @@ function Productos({ products, setProducts, categories, setCategories, movements
         if (!nextCats.some(c => c.name.toLowerCase() === category.toLowerCase())) {
           nextCats = [...nextCats, { id: Date.now() + nextCats.length, name: category }];
         }
-        const existing = nextProducts.find(p => p.code === code);
+        const existing = products.find(p => p.code === code);
         if (existing) {
-          nextProducts = nextProducts.map(p => p.code === code
-            ? { ...p, name, category, buyPrice, sellPrice }
-            : p);
+          await api<Product>(`/products/${existing.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ code, name, category, buyPrice, sellPrice }),
+          });
           updated++;
         } else {
-          const np: Product = { id: Date.now() + added, code, name, category, buyPrice, sellPrice, stock: 0 };
-          nextProducts = [...nextProducts, np];
-          if (stock > 0) {
-            stockEntries.push({ productId: np.id, qty: stock, type: "IMPORTACION", note: "Importación masiva CSV" });
-          }
+          await api<Product>("/products", {
+            method: "POST",
+            body: JSON.stringify({ code, name, category, buyPrice, sellPrice, stock }),
+          });
           added++;
         }
       }
-      const r = pushMovements(nextProducts, movements, stockEntries);
       setCategories(nextCats);
-      setProducts(r.products);
-      setMovements(r.movements);
+      setProducts(await api<Product[]>("/products"));
       setImportMsg(`Importación lista: ${added} nuevos, ${updated} actualizados.`);
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      setImportMsg(err instanceof ApiError ? err.message : "No pudimos importar el archivo.");
+    }
   };
+
 
   return (
     <div className="p-6 flex flex-col gap-5">
@@ -683,8 +670,9 @@ function Productos({ products, setProducts, categories, setCategories, movements
             )}
           </div>
           <div className="flex gap-2 justify-end mt-5">
+            {error && <p className="col-span-2 text-sm text-red-600">{error}</p>}
             <Button variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Button>
-            <Button onClick={saveProduct}>{editing ? "Guardar cambios" : "Guardar producto"}</Button>
+            <Button onClick={() => { void saveProduct(); }}>{editing ? "Guardar cambios" : "Guardar producto"}</Button>
           </div>
         </Modal>
       )}
@@ -958,14 +946,13 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
     c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search)
   );
 
-  const addClient = () => {
+  const addClient = async () => {
     if (!form.name) return;
-    const nc: Client = {
-      id: Date.now(), name: form.name, phone: form.phone, email: form.email,
-      address: form.address, idNumber: form.idNumber, birthDate: form.birthDate,
-      totalBought: 0, lastPurchase: "—", history: [],
-    };
-    setClients([...clients, nc]);
+    const saved = await api<Client>("/clients", {
+      method: "POST",
+      body: JSON.stringify({ ...form, birthDate: form.birthDate || null }),
+    });
+    setClients([...clients, saved]);
     setShowModal(false);
     setForm(emptyForm);
   };
@@ -1046,7 +1033,7 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
           </div>
           <div className="flex gap-2 justify-end mt-5">
             <Button variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Button>
-            <Button onClick={addClient}>Guardar</Button>
+            <Button onClick={() => { void addClient(); }}>Guardar</Button>
           </div>
         </Modal>
       )}
@@ -1067,47 +1054,46 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products, movements
   const [showNew, setShowNew] = useState(false);
   const [newSupp, setNewSupp] = useState({ name: "", phone: "", products: "" });
 
-  const confirmOrder = () => {
+  const confirmOrder = async () => {
     if (!selected || !order.productId || !order.qty || !order.unitPrice) return;
     const product = products.find(p => p.id === Number(order.productId));
     if (!product) return;
     const qty = Number(order.qty);
     const unitPrice = Number(order.unitPrice);
-    const price = qty * unitPrice;
     const invoice = order.invoice.trim() || `OC-${Date.now().toString().slice(-6)}`;
-    const updated = suppliers.map(s => s.id === selected.id
-      ? {
-        ...s,
-        orders: [...s.orders, {
-          date: todayStr(),
-          product: product.name,
-          productId: product.id,
-          qty,
-          unitPrice,
-          price,
-          invoice,
-        }],
-      }
-      : s);
-    setSuppliers(updated);
-    setSelected(updated.find(s => s.id === selected.id)!);
-    const r = pushMovements(products, movements, [{
+    const updated = await api<Supplier>(`/suppliers/${selected.id}/orders`, {
+      method: "POST",
+      body: JSON.stringify({ product: product.name, qty, unitPrice }),
+    });
+    const withInvoice = {
+      ...updated,
+      orders: updated.orders.map((item, index) => index === updated.orders.length - 1 ? { ...item, productId: product.id, invoice } : item),
+    };
+    setSuppliers(suppliers.map(item => item.id === withInvoice.id ? withInvoice : item));
+    setSelected(withInvoice);
+    const nextProducts = await api<Product[]>("/products");
+    setProducts(nextProducts);
+    const balance = nextProducts.find(item => item.id === product.id)?.stock ?? product.stock + qty;
+    setMovements([{
+      id: Date.now(),
+      date: todayStr(),
       productId: product.id,
-      qty,
+      productName: product.name,
+      productCode: product.code,
       type: "ENTRADA_COMPRA",
+      qty,
+      balanceAfter: balance,
       note: `Factura ${invoice} · ${selected.name}`,
       ref: invoice,
-    }]);
-    // Actualiza costo de compra con el precio unitario de la factura
-    setProducts(r.products.map(p => p.id === product.id ? { ...p, buyPrice: unitPrice } : p));
-    setMovements(r.movements);
+    }, ...movements]);
     setShowOrder(false);
     setOrder({ productId: "", qty: "", unitPrice: "", invoice: "" });
   };
 
-  const addSupplier = () => {
+  const addSupplier = async () => {
     if (!newSupp.name) return;
-    setSuppliers([...suppliers, { id: Date.now(), name: newSupp.name, phone: newSupp.phone, products: newSupp.products, orders: [] }]);
+    const saved = await api<Supplier>("/suppliers", { method: "POST", body: JSON.stringify(newSupp) });
+    setSuppliers([...suppliers, saved]);
     setShowNew(false);
     setNewSupp({ name: "", phone: "", products: "" });
   };
@@ -1205,7 +1191,7 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products, movements
           </div>
           <div className="flex gap-2 justify-end mt-5">
             <Button variant="ghost" onClick={() => setShowOrder(false)}>Cancelar</Button>
-            <Button onClick={confirmOrder}>Confirmar y actualizar inventario</Button>
+            <Button onClick={() => { void confirmOrder(); }}>Confirmar y actualizar inventario</Button>
           </div>
         </Modal>
       )}
@@ -1219,7 +1205,7 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products, movements
           </div>
           <div className="flex gap-2 justify-end mt-5">
             <Button variant="ghost" onClick={() => setShowNew(false)}>Cancelar</Button>
-            <Button onClick={addSupplier}>Guardar</Button>
+            <Button onClick={() => { void addSupplier(); }}>Guardar</Button>
           </div>
         </Modal>
       )}
@@ -1255,6 +1241,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
   const [showCheckout, setShowCheckout] = useState(false);
   const [amountPaid, setAmountPaid] = useState("");
   const [lastSale, setLastSale] = useState<SaleReceipt | null>(null);
+  const [saleError, setSaleError] = useState("");
   const barcodeRef = useRef<HTMLInputElement>(null);
 
   const active = tickets.find(t => t.id === activeId) ?? tickets[0];
@@ -1322,54 +1309,67 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
 
   const openCheckout = () => {
     if (!payment || cart.length === 0) return;
+    setSaleError("");
     setAmountPaid(payment === "tarjeta" ? String(total) : "");
     setShowCheckout(true);
   };
 
-  const confirmSale = (withPrint: boolean) => {
+  const confirmSale = async (withPrint: boolean) => {
     if (!canConfirm || !payment || !active) return;
-    const code = `VTA-${Date.now().toString().slice(-6)}`;
-    const clientName = clientId ? clients.find(c => c.id === clientId)?.name : undefined;
-    const sale: SaleReceipt = {
-      code,
-      items: cart.map(i => ({
-        name: i.product.name,
-        qty: i.qty,
-        weight: i.weight,
-        lineTotal: i.product.sellPrice * i.qty,
-      })),
-      total,
-      paid: paidNum,
-      change,
-      payment,
-      clientName,
-      printed: withPrint,
-    };
-
-    openCashDrawer();
-    if (withPrint) printSaleTicket(sale);
-
-    const stockEntries = cart.map(item => ({
-      productId: item.product.id,
-      qty: -Math.ceil(item.qty),
-      type: "SALIDA_VENTA" as MovementType,
-      note: `Venta ${code}`,
-      ref: code,
-    }));
-    const r = pushMovements(products, movements, stockEntries);
-    setProducts(r.products);
-    setMovements(r.movements);
-    if (clientId) {
-      const itemsStr = cart.map(i => `${i.product.name} ×${i.qty}`).join(", ");
-      const updatedClients = clients.map(c => c.id === clientId
-        ? { ...c, totalBought: c.totalBought + total, lastPurchase: "2026-09-15", history: [{ date: "2026-09-15", items: itemsStr, total }, ...c.history] }
-        : c);
-      setClients(updatedClients);
+    setSaleError("");
+    try {
+      const saved = await api<SaleTicket>("/sales", {
+        method: "POST",
+        body: JSON.stringify({
+          clientId,
+          payment,
+          items: cart.map(item => ({ productId: item.product.id, qty: item.qty, weight: item.weight ?? null })),
+        }),
+      });
+      const code = saved.ticket;
+      const clientName = clientId ? clients.find(c => c.id === clientId)?.name : undefined;
+      const sale: SaleReceipt = {
+        code,
+        items: cart.map(i => ({
+          name: i.product.name,
+          qty: i.qty,
+          weight: i.weight,
+          lineTotal: i.product.sellPrice * i.qty,
+        })),
+        total,
+        paid: paidNum,
+        change,
+        payment,
+        clientName,
+        printed: withPrint,
+      };
+      openCashDrawer();
+      if (withPrint) printSaleTicket(sale);
+      const nextProducts = await api<Product[]>("/products");
+      setProducts(nextProducts);
+      setClients(await api<Client[]>("/clients"));
+      setMovements([
+        ...cart.map(item => ({
+          id: Date.now() + item.product.id,
+          date: todayStr(),
+          productId: item.product.id,
+          productName: item.product.name,
+          productCode: item.product.code,
+          type: "SALIDA_VENTA" as MovementType,
+          qty: -Math.ceil(item.qty),
+          balanceAfter: nextProducts.find(p => p.id === item.product.id)?.stock ?? 0,
+          note: `Venta ${code}`,
+          ref: code,
+        })),
+        ...movements,
+      ]);
+      setShowCheckout(false);
+      setAmountPaid("");
+      setLastSale(sale);
+      closeTicket(active.id);
+    } catch (err) {
+      setSaleError(err instanceof ApiError ? err.message : "No pudimos confirmar la venta.");
     }
-    setShowCheckout(false);
-    setAmountPaid("");
-    setLastSale(sale);
-    closeTicket(active.id);
   };
 
   if (lastSale) return (
@@ -1560,6 +1560,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
               ))}
             </div>
 
+            {saleError && <p className="mb-2 text-xs text-red-600">{saleError}</p>}
             <Button onClick={openCheckout} disabled={cart.length === 0 || !payment} className="w-full" size="lg">
               Cobrar
             </Button>
@@ -1602,6 +1603,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
             {amountPaid !== "" && paidNum < total && (
               <p className="text-xs text-red-600">El monto pagado debe ser mayor o igual al total.</p>
             )}
+            {saleError && <p className="text-xs text-red-600">{saleError}</p>}
 
             <p className="text-xs text-slate-400">
               Al confirmar se abrirá el cajón monedero.
@@ -1626,22 +1628,44 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
 
 // ─── Integrations ─────────────────────────────────────────────────────────────
 
-function Integraciones() {
-  const [peripherals, setPeripherals] = useState([
-    { id: "barcode", label: "Lector de código de barras", icon: "▥", connected: true, port: "USB-HID" },
-    { id: "scale", label: "Balanza digital", icon: "⊖", connected: false, port: "COM3" },
-    { id: "printer", label: "Impresora de tickets", icon: "⊟", connected: true, port: "192.168.1.50" },
-    { id: "drawer", label: "Cajón monedero", icon: "▣", connected: true, port: "RJ11 · vía impresora" },
-    { id: "dian", label: "DIAN Facturación Electrónica", icon: "◫", connected: true, port: "API REST" },
-  ]);
+const peripheralIcons: Record<string, string> = { barcode: "▥", scale: "⊖", printer: "⊟", drawer: "▣", dian: "◫" };
 
-  const toggle = (id: string) => setPeripherals(prev => prev.map(p => p.id === id ? { ...p, connected: !p.connected } : p));
+function Integraciones() {
+  const [state, setState] = useState<IntegrationsState | null>(null);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    api<IntegrationsState>("/integrations").then(setState).catch(() => setNotice("No pudimos cargar las integraciones."));
+  }, []);
+
+  const toggle = async (id: string, connected: boolean) => {
+    setState(await api<IntegrationsState>(`/integrations/peripherals/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ connected: !connected }),
+    }));
+  };
+
+  const savePrinter = async () => {
+    if (!state) return;
+    setState(await api<IntegrationsState>("/integrations/printer", { method: "PUT", body: JSON.stringify(state.printer) }));
+    setNotice("Configuración de impresora guardada.");
+  };
+
+  const saveDian = async () => {
+    if (!state) return;
+    setState(await api<IntegrationsState>("/integrations/dian", { method: "PUT", body: JSON.stringify(state.dian) }));
+    setNotice("Configuración DIAN guardada.");
+  };
+
+  if (!state) return <div className="p-6 text-slate-500">{notice || "Cargando integraciones…"}</div>;
+  const peripherals = state.peripherals.map(item => ({ ...item, icon: peripheralIcons[item.id] ?? "▣" }));
 
   return (
     <div className="p-6 flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Integraciones</h1>
         <p className="text-slate-500 text-sm">Estado de periféricos y servicios externos</p>
+        {notice && <p className="text-sm text-blue-700 mt-1">{notice}</p>}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -1661,7 +1685,7 @@ function Integraciones() {
               </span>
             </div>
             <div className="flex gap-2">
-              <Button variant={p.connected ? "danger" : "primary"} size="sm" onClick={() => toggle(p.id)}>
+              <Button variant={p.connected ? "danger" : "primary"} size="sm" onClick={() => { void toggle(p.id, p.connected); }}>
                 {p.connected ? "Desconectar" : "Conectar"}
               </Button>
               <Button variant="ghost" size="sm">Configurar</Button>
@@ -1673,12 +1697,12 @@ function Integraciones() {
       <Card className="p-5">
         <h2 className="font-bold text-slate-700 mb-4 text-sm">Configuración de impresora de tickets</h2>
         <div className="grid grid-cols-3 gap-4">
-          <Input label="IP / Puerto" defaultValue="192.168.1.50" />
-          <Input label="Puerto TCP" defaultValue="9100" />
-          <Select label="Ancho de papel"><option>80mm</option><option>58mm</option></Select>
+          <Input label="IP / Puerto" value={state.printer.host} onChange={e => setState({ ...state, printer: { ...state.printer, host: e.target.value } })} />
+          <Input label="Puerto TCP" type="number" value={state.printer.tcpPort} onChange={e => setState({ ...state, printer: { ...state.printer, tcpPort: Number(e.target.value) } })} />
+          <Select label="Ancho de papel" value={state.printer.paperWidth} onChange={e => setState({ ...state, printer: { ...state.printer, paperWidth: e.target.value } })}><option>80mm</option><option>58mm</option></Select>
         </div>
         <div className="flex gap-2 mt-4">
-          <Button size="sm">Guardar configuración</Button>
+          <Button size="sm" onClick={() => { void savePrinter(); }}>Guardar configuración</Button>
           <Button variant="secondary" size="sm">Imprimir prueba</Button>
         </div>
       </Card>
@@ -1686,14 +1710,14 @@ function Integraciones() {
       <Card className="p-5">
         <h2 className="font-bold text-slate-700 mb-4 text-sm">DIAN — Facturación electrónica</h2>
         <div className="grid grid-cols-2 gap-4">
-          <Input label="NIT empresa" defaultValue="900.123.456-1" />
-          <Input label="Software ID" defaultValue="abc123-dian-prod" />
-          <Input label="PIN de software" type="password" defaultValue="••••••••" />
-          <Select label="Ambiente"><option>Producción</option><option>Habilitación / Pruebas</option></Select>
+          <Input label="NIT empresa" value={state.dian.nit} onChange={e => setState({ ...state, dian: { ...state.dian, nit: e.target.value } })} />
+          <Input label="Software ID" value={state.dian.softwareId} onChange={e => setState({ ...state, dian: { ...state.dian, softwareId: e.target.value } })} />
+          <Input label="PIN de software" type="password" value={state.dian.softwarePin} onChange={e => setState({ ...state, dian: { ...state.dian, softwarePin: e.target.value } })} />
+          <Select label="Ambiente" value={state.dian.environment} onChange={e => setState({ ...state, dian: { ...state.dian, environment: e.target.value } })}><option>Producción</option><option>Habilitación / Pruebas</option></Select>
         </div>
         <div className="mt-4 p-3 bg-emerald-50 rounded-xl flex items-center gap-3">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-          <p className="text-sm text-emerald-700 font-medium">Conexión activa con servicios DIAN · Último ping: 14:31:02</p>
+          <p className="text-sm text-emerald-700 font-medium">{state.peripherals.find(item => item.id === "dian")?.connected ? "Conexión marcada como activa con servicios DIAN" : "DIAN desconectada"}</p>
         </div>
       </Card>
     </div>
@@ -1704,17 +1728,65 @@ function Integraciones() {
 
 export default function App() {
   const [module, setModule] = useState<Module>("dashboard");
-  const [products, setProducts] = useState<Product[]>(initProducts);
-  const [categories, setCategories] = useState<Category[]>(initCategories);
-  const [movements, setMovements] = useState<InventoryMovement[]>(initMovements);
-  const [clients, setClients] = useState<Client[]>(initClients);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(initSuppliers);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [stats, setStats] = useState<DashboardStats>(emptyStats);
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    restoreSession()
+      .then((session) => setSessionEmail(session?.user.email ?? null))
+      .finally(() => setAuthReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (!sessionEmail) return;
+    Promise.all([
+      api<Product[]>("/products"),
+      api<Client[]>("/clients"),
+      api<Supplier[]>("/suppliers"),
+      api<DashboardStats>("/dashboard"),
+    ]).then(([nextProducts, nextClients, nextSuppliers, nextStats]) => {
+      setProducts(nextProducts);
+      setClients(nextClients);
+      setSuppliers(nextSuppliers);
+      setStats(nextStats);
+      setCategories(nextProducts.reduce<Category[]>((list, product) => {
+        if (!product.category || list.some(item => item.name === product.category)) return list;
+        return [...list, { id: list.length + 1, name: product.category }];
+      }, []));
+    }).catch(() => undefined);
+  }, [sessionEmail]);
+
+  useEffect(() => {
+    if (!sessionEmail || module !== "dashboard") return;
+    api<DashboardStats>("/dashboard").then(setStats).catch(() => undefined);
+  }, [sessionEmail, module]);
+
+  if (!authReady) {
+    return <div className="min-h-dvh bg-white" />;
+  }
+
+  if (!sessionEmail) {
+    return <LoginScreen onSuccess={setSessionEmail} />;
+  }
 
   return (
     <div className="flex min-h-screen" style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}>
-      <Sidebar active={module} onNav={setModule} />
+      <Sidebar
+        active={module}
+        onNav={setModule}
+        email={sessionEmail}
+        onLogout={() => {
+          void signOut().then(() => setSessionEmail(null));
+        }}
+      />
       <main className="flex-1 overflow-auto bg-[#F0F4FF]">
-        {module === "dashboard" && <Dashboard products={products} />}
+        {module === "dashboard" && <Dashboard stats={stats} />}
         {module === "productos" && (
           <Productos
             products={products} setProducts={setProducts}
