@@ -493,20 +493,8 @@ function Productos({ products, setProducts, categories, setCategories, movements
         ? await api<Product>(`/products/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) })
         : await api<Product>("/products", { method: "POST", body: JSON.stringify(body) });
       setProducts(editing ? products.map(item => item.id === saved.id ? saved : item) : [...products, saved]);
-      if (!editing && saved.stock > 0) {
-        setMovements([{
-          id: Date.now(),
-          date: todayStr(),
-          productId: saved.id,
-          productName: saved.name,
-          productCode: saved.code,
-          type: "ENTRADA_INICIAL",
-          qty: saved.stock,
-          balanceAfter: saved.stock,
-          note: "Stock inicial al crear producto",
-          ref: "INI",
-        }, ...movements]);
-      }
+      setCategories(await api<Category[]>("/categories"));
+      setMovements(await api<InventoryMovement[]>("/inventory/movements"));
       setShowModal(false);
       setEditing(null);
       setForm(emptyForm);
@@ -515,22 +503,28 @@ function Productos({ products, setProducts, categories, setCategories, movements
     }
   };
 
-  const addCategory = () => {
+  const addCategory = async () => {
     const name = newCat.trim();
     if (!name) return;
-    if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+    try {
+      const saved = await api<Category>("/categories", { method: "POST", body: JSON.stringify({ name }) });
+      setCategories([...categories.filter(item => item.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name)));
       setNewCat("");
-      return;
+    } catch (err) {
+      setImportMsg(err instanceof ApiError ? err.message : "No pudimos crear la categoría.");
     }
-    setCategories([...categories, { id: Date.now(), name }]);
-    setNewCat("");
   };
 
-  const removeCategory = (id: number) => {
+  const removeCategory = async (id: number) => {
     const cat = categories.find(c => c.id === id);
     if (!cat) return;
     if (products.some(p => p.category === cat.name)) return;
-    setCategories(categories.filter(c => c.id !== id));
+    try {
+      await api(`/categories/${id}`, { method: "DELETE" });
+      setCategories(categories.filter(c => c.id !== id));
+    } catch (err) {
+      setImportMsg(err instanceof ApiError ? err.message : "No pudimos eliminar la categoría.");
+    }
   };
 
   const handleImport = async (file: File) => {
@@ -566,7 +560,8 @@ function Productos({ products, setProducts, categories, setCategories, movements
         const sellPrice = Number(iSell >= 0 ? cols[iSell] : 0) || 0;
         const stock = Number(iStock >= 0 ? cols[iStock] : 0) || 0;
         if (!nextCats.some(c => c.name.toLowerCase() === category.toLowerCase())) {
-          nextCats = [...nextCats, { id: Date.now() + nextCats.length, name: category }];
+          const savedCategory = await api<Category>("/categories", { method: "POST", body: JSON.stringify({ name: category }) });
+          nextCats = [...nextCats, savedCategory];
         }
         const existing = products.find(p => p.code === code);
         if (existing) {
@@ -578,13 +573,14 @@ function Productos({ products, setProducts, categories, setCategories, movements
         } else {
           await api<Product>("/products", {
             method: "POST",
-            body: JSON.stringify({ code, name, category, buyPrice, sellPrice, stock }),
+            body: JSON.stringify({ code, name, category, buyPrice, sellPrice, stock, entryType: "IMPORTACION" }),
           });
           added++;
         }
       }
-      setCategories(nextCats);
+      setCategories(await api<Category[]>("/categories"));
       setProducts(await api<Product[]>("/products"));
+      setMovements(await api<InventoryMovement[]>("/inventory/movements"));
       setImportMsg(`Importación lista: ${added} nuevos, ${updated} actualizados.`);
     } catch (err) {
       setImportMsg(err instanceof ApiError ? err.message : "No pudimos importar el archivo.");
@@ -682,7 +678,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
         <Modal title="Categorías" onClose={() => setShowCats(false)}>
           <div className="flex gap-2 mb-4">
             <Input placeholder="Nueva categoría" value={newCat} onChange={e => setNewCat(e.target.value)} className="flex-1" />
-            <Button onClick={addCategory}>Agregar</Button>
+            <Button onClick={() => { void addCategory(); }}>Agregar</Button>
           </div>
           <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
             {categories.map(c => {
@@ -692,7 +688,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
                   <span className="text-sm font-medium text-slate-800">{c.name}</span>
                   <button
                     disabled={inUse}
-                    onClick={() => removeCategory(c.id)}
+                    onClick={() => { void removeCategory(c.id); }}
                     className={`text-xs ${inUse ? "text-slate-300 cursor-not-allowed" : "text-red-500 hover:underline"}`}
                     title={inUse ? "En uso por productos" : "Eliminar"}
                   >
@@ -718,30 +714,33 @@ function Inventario({ products, setProducts, movements, setMovements }: {
   const [tab, setTab] = useState<"stock" | "ajustes" | "movimientos" | "kardex">("stock");
   const [search, setSearch] = useState("");
   const [adjust, setAdjust] = useState({ productId: "", qty: "", reason: "", mode: "set" as "set" | "delta" });
+  const [adjustError, setAdjustError] = useState("");
   const [kardexId, setKardexId] = useState<string>("");
 
   const filteredStock = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) || p.code.includes(search)
   );
 
-  const applyAdjust = () => {
+  const applyAdjust = async () => {
     const productId = Number(adjust.productId);
-    const p = products.find(x => x.id === productId);
-    if (!p || !adjust.qty) return;
-    const value = Number(adjust.qty);
-    if (!Number.isFinite(value)) return;
-    const delta = adjust.mode === "set" ? value - p.stock : value;
-    if (delta === 0) return;
-    const r = pushMovements(products, movements, [{
-      productId,
-      qty: delta,
-      type: "AJUSTE",
-      note: adjust.reason || (adjust.mode === "set" ? `Ajuste a cantidad ${value}` : `Ajuste relativo ${delta > 0 ? "+" : ""}${delta}`),
-      ref: "AJUSTE",
-    }]);
-    setProducts(r.products);
-    setMovements(r.movements);
-    setAdjust({ productId: "", qty: "", reason: "", mode: "set" });
+    if (!productId || adjust.qty === "") return;
+    setAdjustError("");
+    try {
+      await api("/inventory/adjustments", {
+        method: "POST",
+        body: JSON.stringify({
+          productId,
+          mode: adjust.mode,
+          qty: Number(adjust.qty),
+          reason: adjust.reason,
+        }),
+      });
+      setProducts(await api<Product[]>("/products"));
+      setMovements(await api<InventoryMovement[]>("/inventory/movements"));
+      setAdjust({ productId: "", qty: "", reason: "", mode: "set" });
+    } catch (err) {
+      setAdjustError(err instanceof ApiError ? err.message : "No pudimos registrar el ajuste.");
+    }
   };
 
   const exportGeneral = () => {
@@ -856,7 +855,8 @@ function Inventario({ products, setProducts, movements, setMovements }: {
               onChange={e => setAdjust({ ...adjust, qty: e.target.value })}
             />
             <Input label="Motivo" value={adjust.reason} onChange={e => setAdjust({ ...adjust, reason: e.target.value })} placeholder="Ej. conteo físico, merma, daño…" />
-            <Button onClick={applyAdjust} disabled={!adjust.productId || !adjust.qty}>Registrar ajuste</Button>
+            {adjustError && <p className="text-sm text-red-600">{adjustError}</p>}
+            <Button onClick={() => { void applyAdjust(); }} disabled={!adjust.productId || adjust.qty === ""}>Registrar ajuste</Button>
           </div>
         </Card>
       )}
@@ -1064,29 +1064,12 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products, movements
     const invoice = order.invoice.trim() || `OC-${Date.now().toString().slice(-6)}`;
     const updated = await api<Supplier>(`/suppliers/${selected.id}/orders`, {
       method: "POST",
-      body: JSON.stringify({ product: product.name, qty, unitPrice }),
+      body: JSON.stringify({ product: product.name, productId: product.id, qty, unitPrice, invoice }),
     });
-    const withInvoice = {
-      ...updated,
-      orders: updated.orders.map((item, index) => index === updated.orders.length - 1 ? { ...item, productId: product.id, invoice } : item),
-    };
-    setSuppliers(suppliers.map(item => item.id === withInvoice.id ? withInvoice : item));
-    setSelected(withInvoice);
-    const nextProducts = await api<Product[]>("/products");
-    setProducts(nextProducts);
-    const balance = nextProducts.find(item => item.id === product.id)?.stock ?? product.stock + qty;
-    setMovements([{
-      id: Date.now(),
-      date: todayStr(),
-      productId: product.id,
-      productName: product.name,
-      productCode: product.code,
-      type: "ENTRADA_COMPRA",
-      qty,
-      balanceAfter: balance,
-      note: `Factura ${invoice} · ${selected.name}`,
-      ref: invoice,
-    }, ...movements]);
+    setSuppliers(suppliers.map(item => item.id === updated.id ? updated : item));
+    setSelected(updated);
+    setProducts(await api<Product[]>("/products"));
+    setMovements(await api<InventoryMovement[]>("/inventory/movements"));
     setShowOrder(false);
     setOrder({ productId: "", qty: "", unitPrice: "", invoice: "" });
   };
@@ -1346,24 +1329,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
       };
       openCashDrawer();
       if (withPrint) printSaleTicket(sale);
-      const nextProducts = await api<Product[]>("/products");
-      setProducts(nextProducts);
+      setProducts(await api<Product[]>("/products"));
       setClients(await api<Client[]>("/clients"));
-      setMovements([
-        ...cart.map(item => ({
-          id: Date.now() + item.product.id,
-          date: todayStr(),
-          productId: item.product.id,
-          productName: item.product.name,
-          productCode: item.product.code,
-          type: "SALIDA_VENTA" as MovementType,
-          qty: -Math.ceil(item.qty),
-          balanceAfter: nextProducts.find(p => p.id === item.product.id)?.stock ?? 0,
-          note: `Venta ${code}`,
-          ref: code,
-        })),
-        ...movements,
-      ]);
+      setMovements(await api<InventoryMovement[]>("/inventory/movements"));
       setShowCheckout(false);
       setAmountPaid("");
       setLastSale(sale);
@@ -1847,15 +1815,15 @@ export default function App() {
       api<Client[]>("/clients"),
       api<Supplier[]>("/suppliers"),
       api<DashboardStats>("/dashboard"),
-    ]).then(([nextProducts, nextClients, nextSuppliers, nextStats]) => {
+      api<Category[]>("/categories"),
+      api<InventoryMovement[]>("/inventory/movements"),
+    ]).then(([nextProducts, nextClients, nextSuppliers, nextStats, nextCategories, nextMovements]) => {
       setProducts(nextProducts);
       setClients(nextClients);
       setSuppliers(nextSuppliers);
       setStats(nextStats);
-      setCategories(nextProducts.reduce<Category[]>((list, product) => {
-        if (!product.category || list.some(item => item.name === product.category)) return list;
-        return [...list, { id: list.length + 1, name: product.category }];
-      }, []));
+      setCategories(nextCategories);
+      setMovements(nextMovements);
     }).catch(() => undefined);
   }, [sessionEmail]);
 
