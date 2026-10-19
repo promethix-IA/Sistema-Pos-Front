@@ -9,7 +9,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "integraciones";
+type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "integraciones" | "usuarios";
 
 type MovementType = "ENTRADA_COMPRA" | "SALIDA_VENTA" | "AJUSTE" | "ENTRADA_INICIAL" | "IMPORTACION";
 
@@ -292,6 +292,7 @@ const navItems: { id: Module; label: string; icon: string }[] = [
   { id: "proveedores", label: "Proveedores", icon: "⊡" },
   { id: "ventas", label: "Punto de Venta", icon: "⊙" },
   { id: "integraciones", label: "Integraciones", icon: "⊗" },
+  { id: "usuarios", label: "Usuarios", icon: "☺" },
 ];
 
 function Sidebar({ active, onNav, email, onLogout }: { active: Module; onNav: (m: Module) => void; email: string; onLogout: () => void }) {
@@ -1724,6 +1725,102 @@ function Integraciones() {
   );
 }
 
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+interface AccountUser {
+  id: number;
+  email: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+function Usuarios() {
+  const emptyForm = { email: "", password: "" };
+  const [users, setUsers] = useState<AccountUser[]>([]);
+  const [form, setForm] = useState(emptyForm);
+  const [showModal, setShowModal] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const loadUsers = async () => {
+    setUsers(await api<AccountUser[]>("/users"));
+  };
+
+  useEffect(() => {
+    loadUsers()
+      .catch(() => setError("No pudimos cargar los usuarios."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const createUser = async () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.password.length < 6) return;
+    setError("");
+    try {
+      const saved = await api<AccountUser>("/users", {
+        method: "POST",
+        body: JSON.stringify({ email: form.email.trim(), password: form.password }),
+      });
+      setUsers([saved, ...users.filter(user => user.id !== saved.id)]);
+      setForm(emptyForm);
+      setShowModal(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No pudimos crear el usuario.");
+    }
+  };
+
+  return (
+    <div className="p-6 flex flex-col gap-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Usuarios</h1>
+          <p className="text-slate-500 text-sm">{users.length} cuentas con acceso al sistema</p>
+        </div>
+        <Button onClick={() => { setError(""); setShowModal(true); }}>+ Crear usuario</Button>
+      </div>
+
+      {error && !showModal && <p className="text-sm text-red-600">{error}</p>}
+
+      <Card className="overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              {["Correo", "Estado", "Creado"].map(heading => (
+                <th key={heading} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{heading}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(user => (
+              <tr key={user.id} className="border-b border-slate-50">
+                <td className="px-4 py-3 font-medium text-slate-800">{user.email}</td>
+                <td className="px-4 py-3"><Badge color={user.is_active ? "green" : "gray"}>{user.is_active ? "Activo" : "Inactivo"}</Badge></td>
+                <td className="px-4 py-3 text-slate-500">{new Date(user.created_at).toLocaleString("es-CO")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!loading && users.length === 0 && <p className="text-center text-slate-400 py-12 text-sm">Aún no hay usuarios</p>}
+        {loading && <p className="text-center text-slate-400 py-12 text-sm">Cargando usuarios…</p>}
+      </Card>
+
+      {showModal && (
+        <Modal title="Crear usuario" onClose={() => setShowModal(false)}>
+          <div className="flex flex-col gap-3">
+            <Input label="Correo electrónico" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+            <Input label="Contraseña" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+            <p className="text-xs text-slate-500">Mínimo 6 caracteres. La persona entra con este correo y esta contraseña.</p>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+          </div>
+          <div className="flex gap-2 justify-end mt-5">
+            <Button variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Button>
+            <Button onClick={() => { void createUser(); }} disabled={!form.email.trim() || form.password.length < 6}>Guardar</Button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 // ─── App Root ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -1816,6 +1913,7 @@ export default function App() {
           />
         )}
         {module === "integraciones" && <Integraciones />}
+        {module === "usuarios" && <Usuarios />}
       </main>
     </div>
   );
