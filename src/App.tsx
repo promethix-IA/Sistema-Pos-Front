@@ -218,25 +218,27 @@ function printSaleTicket(sale: SaleReceipt) {
 
 function Badge({ children, color = "blue" }: { children: React.ReactNode; color?: "blue" | "green" | "red" | "yellow" | "gray" }) {
   const colors = {
-    blue: "bg-blue-100 text-blue-700", green: "bg-emerald-100 text-emerald-700",
-    red: "bg-red-100 text-red-700", yellow: "bg-amber-100 text-amber-700",
-    gray: "bg-slate-100 text-slate-600",
+    blue: "border-brand-200 bg-brand-50 text-brand-700",
+    green: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    red: "border-rose-200 bg-rose-50 text-rose-700",
+    yellow: "border-amber-200 bg-amber-50 text-amber-700",
+    gray: "border-slate-200 bg-slate-50 text-slate-600",
   };
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors[color]}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${colors[color]}`}>{children}</span>;
 }
 
 function Button({ children, onClick, variant = "primary", size = "md", className = "", disabled = false }: {
   children: React.ReactNode; onClick?: () => void; variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md" | "lg"; className?: string; disabled?: boolean;
 }) {
-  const base = "inline-flex items-center justify-center font-semibold rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed";
+  const base = "inline-flex items-center justify-center rounded-xl font-semibold shadow-sm transition duration-200 hover:-translate-y-px active:translate-y-0 active:scale-[0.98] focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/25 disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed";
   const variants = {
-    primary: "bg-blue-700 text-white hover:bg-blue-800 focus:ring-blue-500",
-    secondary: "bg-blue-50 text-blue-700 hover:bg-blue-100 focus:ring-blue-300",
-    ghost: "bg-transparent text-slate-600 hover:bg-slate-100 focus:ring-slate-300",
-    danger: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-400",
+    primary: "bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-brand hover:brightness-110",
+    secondary: "border border-brand-200 bg-brand-50 text-brand-700 hover:border-brand-300 hover:bg-white",
+    ghost: "border border-transparent bg-white/70 text-slate-600 shadow-none hover:border-slate-200 hover:bg-white hover:text-navy-900",
+    danger: "bg-gradient-to-br from-rose-500 to-rose-700 text-white hover:brightness-110",
   };
-  const sizes = { sm: "px-3 py-1.5 text-sm gap-1.5", md: "px-4 py-2 text-sm gap-2", lg: "px-6 py-3 text-base gap-2" };
+  const sizes = { sm: "px-3 py-1.5 text-sm gap-1.5", md: "px-4 py-2.5 text-sm gap-2", lg: "px-6 py-3 text-base gap-2" };
   return (
     <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}>
       {children}
@@ -245,18 +247,28 @@ function Button({ children, onClick, variant = "primary", size = "md", className
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`bg-white rounded-2xl shadow-sm border border-slate-100 ${className}`}>{children}</div>;
+  return (
+    <div className={`rounded-2xl border border-white/80 bg-white/90 shadow-card backdrop-blur-sm transition duration-300 hover:border-brand-200/70 hover:shadow-lg ${className}`}>
+      {children}
+    </div>
+  );
 }
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-800">{title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/45 p-4 backdrop-blur-md animate-fade">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-white/70 bg-white shadow-2xl animate-pop">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <h2 className="font-display text-lg font-bold text-navy-900">{title}</h2>
+          <button
+            onClick={onClose}
+            className="grid size-9 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-navy-900"
+            aria-label="Cerrar"
+          >
+            ×
+          </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-6">{children}</div>
       </div>
     </div>
   );
@@ -264,18 +276,18 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 
 function Input({ label, ...props }: { label?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <div className="flex flex-col gap-1">
-      {label && <label className="text-sm font-medium text-slate-700">{label}</label>}
-      <input {...props} className={`border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition ${props.className ?? ""}`} />
+    <div className="flex flex-col gap-1.5">
+      {label && <label className="text-sm font-semibold text-navy-900">{label}</label>}
+      <input {...props} className={`rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-navy-900 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15 ${props.className ?? ""}`} />
     </div>
   );
 }
 
 function Select({ label, children, className = "", ...props }: { label?: string } & React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <div className={`flex flex-col gap-1 ${className}`}>
-      {label && <label className="text-sm font-medium text-slate-700">{label}</label>}
-      <select {...props} className="border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+    <div className={`flex flex-col gap-1.5 ${className}`}>
+      {label && <label className="text-sm font-semibold text-navy-900">{label}</label>}
+      <select {...props} className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-navy-900 outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15">
         {children}
       </select>
     </div>
@@ -295,43 +307,46 @@ const navItems: { id: Module; label: string; icon: string }[] = [
   { id: "usuarios", label: "Usuarios", icon: "☺" },
 ];
 
-function Sidebar({ active, onNav, email, onLogout }: { active: Module; onNav: (m: Module) => void; email: string; onLogout: () => void }) {
+function Sidebar({ active, onNav, email, onLogout, open }: { active: Module; onNav: (m: Module) => void; email: string; onLogout: () => void; open: boolean }) {
   return (
-    <aside className="w-64 min-h-screen bg-blue-900 flex flex-col select-none shrink-0">
-      <div className="px-6 py-6 border-b border-blue-800">
+    <aside className={`mesh-navy fixed inset-y-0 left-0 z-50 flex h-dvh w-72 max-w-[85vw] shrink-0 select-none flex-col overflow-hidden text-white transition duration-300 lg:static lg:z-auto lg:h-screen lg:w-64 lg:max-w-none ${open ? "" : "drawer-closed"}`}>
+      <div className="pointer-events-none absolute -right-16 top-24 size-48 rounded-full bg-brand-400/20 blur-3xl" aria-hidden="true" />
+      <div className="relative border-b border-white/10 px-5 py-6">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center text-white font-bold text-lg">E</div>
+          <img src="/brand/promethixia-mark.svg" alt="" width={40} height={40} className="size-10 drop-shadow-[0_8px_16px_rgba(59,130,246,0.45)]" />
           <div>
-            <p className="text-white font-bold text-sm leading-tight">ERP POS</p>
-            <p className="text-blue-300 text-xs">v2.1 · Tienda</p>
+            <p className="font-display text-sm font-bold leading-tight">Promethixia</p>
+            <p className="text-xs text-brand-200">Punto de venta</p>
           </div>
         </div>
       </div>
-      <nav className="flex-1 py-4 px-3 flex flex-col gap-1">
+      <nav className="relative flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         {navItems.map(item => (
           <button
             key={item.id}
             onClick={() => onNav(item.id)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all text-left
+            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition duration-200
               ${active === item.id
-                ? "bg-blue-700 text-white shadow-sm"
-                : "text-blue-200 hover:bg-blue-800 hover:text-white"
+                ? "bg-white text-navy-900 shadow-lg shadow-black/10"
+                : "text-blue-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white"
               }`}
           >
-            <span className="text-base opacity-80">{item.icon}</span>
+            <span className={`grid size-8 place-items-center rounded-lg text-sm ${active === item.id ? "bg-brand-50 text-brand-700" : "bg-white/10"}`}>
+              {item.icon}
+            </span>
             {item.label}
           </button>
         ))}
       </nav>
-      <div className="px-4 pb-5 flex flex-col gap-3">
-        <div className="bg-blue-800 rounded-xl p-3 text-xs text-blue-300">
-          <p className="font-semibold text-blue-200 mb-1">Tienda Central</p>
-          <p className="truncate">{email}</p>
+      <div className="relative flex flex-col gap-3 px-4 pb-5">
+        <div className="rounded-2xl border border-white/10 bg-white/8 p-3 text-xs text-blue-100 backdrop-blur">
+          <p className="mb-1 font-semibold text-white">Tienda Central</p>
+          <p className="truncate text-brand-100">{email}</p>
         </div>
         <button
           type="button"
           onClick={onLogout}
-          className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-blue-100 hover:bg-blue-800 hover:text-white transition"
+          className="w-full rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-blue-100 transition hover:bg-white/10 hover:text-white"
         >
           Cerrar sesión
         </button>
@@ -352,36 +367,37 @@ function Dashboard({ stats }: { stats: DashboardStats }) {
     : "";
 
   return (
-    <div className="p-6 flex flex-col gap-6">
+    <div className="p-4 sm:p-6 flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
         <p className="text-slate-500 text-sm capitalize">{dateLabel}</p>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {[
-          { label: "Ventas Hoy", value: fmt(stats.today), sub: stats.todayChange, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Ventas Semana", value: fmt(stats.week), sub: stats.weekChange, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Ventas Año", value: fmt(stats.year), sub: "Acumulado del año", color: "text-violet-600", bg: "bg-violet-50" },
-        ].map(card => (
-          <Card key={card.label} className="p-5">
-            <p className="text-sm text-slate-500 font-medium mb-2">{card.label}</p>
-            <p className="text-2xl font-bold text-slate-800 mb-1">{card.value}</p>
-            <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${card.bg} ${card.color}`}>{card.sub}</span>
+          { label: "Ventas Hoy", value: fmt(stats.today), sub: stats.todayChange, color: "text-emerald-700", bg: "border-emerald-200 bg-emerald-50", bar: "from-emerald-400 to-emerald-600" },
+          { label: "Ventas Semana", value: fmt(stats.week), sub: stats.weekChange, color: "text-brand-700", bg: "border-brand-200 bg-brand-50", bar: "from-brand-400 to-brand-700" },
+          { label: "Ventas Año", value: fmt(stats.year), sub: "Acumulado del año", color: "text-violet-700", bg: "border-violet-200 bg-violet-50", bar: "from-violet-400 to-violet-700" },
+        ].map((card, index) => (
+          <Card key={card.label} className="relative overflow-hidden p-5 animate-rise hover:-translate-y-1">
+            <span className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${card.bar}`} />
+            <p className="mb-2 text-sm font-medium text-slate-500" style={{ animationDelay: `${index * 70}ms` }}>{card.label}</p>
+            <p className="mb-2 font-display text-2xl font-bold text-navy-900">{card.value}</p>
+            <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${card.bg} ${card.color}`}>{card.sub}</span>
           </Card>
         ))}
       </div>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
         {/* Sales Chart */}
-        <Card className="col-span-3 p-5">
-          <div className="flex items-center justify-between mb-4">
+        <Card className="p-5 xl:col-span-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-bold text-slate-700">Ventas por período</h2>
             <div className="flex gap-1">
               {(["semana", "mes"] as const).map(v => (
                 <button key={v} onClick={() => setChartView(v)}
-                  className={`px-3 py-1 text-xs rounded-lg font-medium transition ${chartView === v ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                  className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${chartView === v ? "bg-navy-900 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-white"}`}>
                   {v === "semana" ? "Esta semana" : "Este año"}
                 </button>
               ))}
@@ -394,13 +410,13 @@ function Dashboard({ stats }: { stats: DashboardStats }) {
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94A3B8" }}
                 tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
               <Tooltip formatter={(v) => [fmt(Number(v)), "Ventas"]} contentStyle={{ borderRadius: 10, border: "none", boxShadow: "0 4px 20px #00000015" }} />
-              <Bar dataKey="amount" fill="#1D4ED8" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="amount" fill="#1b6ef3" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>
 
         {/* Top Products & Low Stock */}
-        <div className="col-span-2 flex flex-col gap-4">
+        <div className="flex flex-col gap-4 xl:col-span-2">
           <Card className="p-5 flex-1">
             <h2 className="font-bold text-slate-700 mb-3">Más vendidos</h2>
             <div className="flex flex-col gap-2">
@@ -589,7 +605,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
 
 
   return (
-    <div className="p-6 flex flex-col gap-5">
+    <div className="p-4 sm:p-6 flex flex-col gap-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Productos</h1>
@@ -612,7 +628,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
       )}
 
       <div className="flex gap-3 flex-wrap">
-        <Input placeholder="Buscar por nombre o código..." value={search} onChange={e => setSearch(e.target.value)} className="w-64" />
+        <Input placeholder="Buscar por nombre o código..." value={search} onChange={e => setSearch(e.target.value)} className="w-full sm:w-72" />
         <Select value={catFilter} onChange={e => setCatFilter(e.target.value)}>
           {filterOpts.map(c => <option key={c}>{c}</option>)}
         </Select>
@@ -650,8 +666,8 @@ function Productos({ products, setProducts, categories, setCategories, movements
 
       {showModal && (
         <Modal title={editing ? "Editar producto" : "Agregar producto"} onClose={() => setShowModal(false)}>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Nombre del producto" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="col-span-2" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Input label="Nombre del producto" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="sm:col-span-2" />
             <Input label="Código de barras" value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} />
             <Select label="Categoría" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
               <option value="">Seleccionar…</option>
@@ -660,10 +676,10 @@ function Productos({ products, setProducts, categories, setCategories, movements
             <Input label="Precio de compra (COP)" type="number" value={form.buyPrice} onChange={e => setForm({ ...form, buyPrice: e.target.value })} />
             <Input label="Precio de venta (COP)" type="number" value={form.sellPrice} onChange={e => setForm({ ...form, sellPrice: e.target.value })} />
             {!editing && (
-              <Input label="Stock inicial" type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className="col-span-2" />
+              <Input label="Stock inicial" type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className="sm:col-span-2" />
             )}
             {editing && (
-              <p className="col-span-2 text-xs text-slate-500">El stock se gestiona en Inventario (ajustes y entradas).</p>
+              <p className="text-xs text-slate-500 sm:col-span-2">El stock se gestiona en Inventario (ajustes y entradas).</p>
             )}
           </div>
           <div className="flex gap-2 justify-end mt-5">
@@ -787,7 +803,7 @@ function Inventario({ products, setProducts, movements, setMovements }: {
   ];
 
   return (
-    <div className="p-6 flex flex-col gap-5">
+    <div className="p-4 sm:p-6 flex flex-col gap-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Inventario</h1>
@@ -799,10 +815,10 @@ function Inventario({ products, setProducts, movements, setMovements }: {
         </div>
       </div>
 
-      <div className="flex gap-1 bg-white border border-slate-100 rounded-xl p-1 w-fit flex-wrap">
+      <div className="flex w-full flex-wrap gap-1 rounded-2xl border border-white/80 bg-white/80 p-1 shadow-card backdrop-blur sm:w-fit">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${tab === t.id ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition duration-200 ${tab === t.id ? "bg-navy-900 text-white shadow-sm" : "text-slate-600 hover:bg-brand-50 hover:text-navy-900"}`}>
             {t.label}
           </button>
         ))}
@@ -810,7 +826,7 @@ function Inventario({ products, setProducts, movements, setMovements }: {
 
       {tab === "stock" && (
         <>
-          <Input placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} className="w-72" />
+          <Input placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} className="w-full sm:w-72" />
           <Card className="overflow-hidden">
             <table className="w-full text-sm">
               <thead>
@@ -897,7 +913,7 @@ function Inventario({ products, setProducts, movements, setMovements }: {
       {tab === "kardex" && (
         <div className="flex flex-col gap-4">
           <div className="flex gap-3 items-end flex-wrap">
-            <Select label="Producto" value={kardexId} onChange={e => setKardexId(e.target.value)} className="min-w-72">
+            <Select label="Producto" value={kardexId} onChange={e => setKardexId(e.target.value)} className="w-full sm:min-w-72 sm:w-auto">
               <option value="">Seleccionar producto…</option>
               {products.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
             </Select>
@@ -959,7 +975,7 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
   };
 
   if (detail) return (
-    <div className="p-6 flex flex-col gap-5">
+    <div className="p-4 sm:p-6 flex flex-col gap-5">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => setDetail(null)}>← Volver</Button>
         <div>
@@ -968,7 +984,7 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
           <p className="text-slate-500 text-sm">{detail.address || "Sin dirección"} · Cédula {detail.idNumber || "—"} · Nacimiento {detail.birthDate || "—"}</p>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card className="p-4"><p className="text-xs text-slate-500 mb-1">Total comprado</p><p className="text-xl font-bold text-blue-700">{fmt(detail.totalBought)}</p></Card>
         <Card className="p-4"><p className="text-xs text-slate-500 mb-1">Última compra</p><p className="text-xl font-bold text-slate-700">{detail.lastPurchase}</p></Card>
         <Card className="p-4"><p className="text-xs text-slate-500 mb-1">Pedidos</p><p className="text-xl font-bold text-slate-700">{detail.history.length}</p></Card>
@@ -993,12 +1009,12 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
   );
 
   return (
-    <div className="p-6 flex flex-col gap-5">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-2xl font-bold text-slate-800">Clientes</h1><p className="text-slate-500 text-sm">{clients.length} clientes</p></div>
         <Button onClick={() => setShowModal(true)}>+ Agregar cliente</Button>
       </div>
-      <Input placeholder="Buscar por nombre o teléfono..." value={search} onChange={e => setSearch(e.target.value)} className="w-72" />
+      <Input placeholder="Buscar por nombre o teléfono..." value={search} onChange={e => setSearch(e.target.value)} className="w-full sm:w-72" />
       <Card className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead><tr className="bg-slate-50 border-b border-slate-100">
@@ -1083,8 +1099,8 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products, movements
   };
 
   return (
-    <div className="p-6 flex flex-col gap-5">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-2xl font-bold text-slate-800">Proveedores</h1><p className="text-slate-500 text-sm">{suppliers.length} proveedores</p></div>
         <Button onClick={() => setShowNew(true)}>+ Agregar proveedor</Button>
       </div>
@@ -1159,7 +1175,7 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products, movements
               <option value="">Seleccionar producto…</option>
               {products.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
             </Select>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input label="Cantidad" type="number" min="1" value={order.qty} onChange={e => setOrder({ ...order, qty: e.target.value })} />
               <Input label="Precio unitario (COP)" type="number" min="0" value={order.unitPrice} onChange={e => setOrder({ ...order, unitPrice: e.target.value })} />
             </div>
@@ -1342,7 +1358,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
   };
 
   if (lastSale) return (
-    <div className="p-6 flex flex-col items-center justify-center min-h-[70vh] gap-5">
+    <div className="p-4 sm:p-6 flex flex-col items-center justify-center min-h-[70vh] gap-5">
       <div className="bg-white rounded-2xl shadow-lg p-8 max-w-sm w-full text-center">
         <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
         <h2 className="text-xl font-bold text-slate-800 mb-1">Venta confirmada</h2>
@@ -1376,9 +1392,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
   );
 
   return (
-    <div className="p-6 flex gap-5 h-full">
+    <div className="flex min-h-0 flex-col gap-5 p-4 sm:p-6 lg:h-full lg:flex-row">
       {/* Left: search + products */}
-      <div className="flex-1 flex flex-col gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-bold text-slate-800">Punto de Venta</h1>
           <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg font-medium">
@@ -1401,12 +1417,12 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         {filtered.length > 0 && (
           <Card className="overflow-hidden">
             {filtered.map(p => (
-              <div key={p.id} className="flex items-center justify-between px-4 py-3 border-b border-slate-50 hover:bg-blue-50 transition">
+              <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-50 px-4 py-3 transition hover:bg-blue-50">
                 <div>
                   <p className="font-medium text-slate-800">{p.name}</p>
                   <p className="text-xs text-slate-400 font-mono">{p.code} · Stock: {p.stock}</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                   <span className="font-bold text-blue-700">{fmt(p.sellPrice)}</span>
                   {p.category === "Lácteos" ? (
                     <div className="flex items-center gap-1">
@@ -1429,7 +1445,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         <Card className="p-4">
           <p className="text-sm font-semibold text-slate-700 mb-2">Cliente (opcional)</p>
           <select value={clientId ?? ""} onChange={e => updateActive({ clientId: e.target.value ? Number(e.target.value) : null })}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15">
             <option value="">Sin cliente registrado</option>
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -1437,17 +1453,17 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
       </div>
 
       {/* Right: Cart */}
-      <div className="w-80 flex flex-col gap-3">
+      <div className="flex w-full shrink-0 flex-col gap-3 lg:w-80">
         {/* Ticket tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
           {tickets.map(t => (
             <button
               key={t.id}
               onClick={() => setActiveId(t.id)}
-              className={`group flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-xl text-xs font-semibold transition border ${
+              className={`group flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition duration-200 ${
                 t.id === activeId
-                  ? "bg-blue-700 text-white border-blue-700"
-                  : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
+                  ? "border-navy-900 bg-navy-900 text-white shadow-sm"
+                  : "border-slate-200 bg-white text-slate-600 hover:-translate-y-px hover:border-brand-300"
               }`}
             >
               <span>{t.label}</span>
@@ -1630,14 +1646,14 @@ function Integraciones() {
   const peripherals = state.peripherals.map(item => ({ ...item, icon: peripheralIcons[item.id] ?? "▣" }));
 
   return (
-    <div className="p-6 flex flex-col gap-6">
+    <div className="p-4 sm:p-6 flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Integraciones</h1>
         <p className="text-slate-500 text-sm">Estado de periféricos y servicios externos</p>
         {notice && <p className="text-sm text-blue-700 mt-1">{notice}</p>}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {peripherals.map(p => (
           <Card key={p.id} className="p-5">
             <div className="flex items-start justify-between mb-4">
@@ -1665,7 +1681,7 @@ function Integraciones() {
 
       <Card className="p-5">
         <h2 className="font-bold text-slate-700 mb-4 text-sm">Configuración de impresora de tickets</h2>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Input label="IP / Puerto" value={state.printer.host} onChange={e => setState({ ...state, printer: { ...state.printer, host: e.target.value } })} />
           <Input label="Puerto TCP" type="number" value={state.printer.tcpPort} onChange={e => setState({ ...state, printer: { ...state.printer, tcpPort: Number(e.target.value) } })} />
           <Select label="Ancho de papel" value={state.printer.paperWidth} onChange={e => setState({ ...state, printer: { ...state.printer, paperWidth: e.target.value } })}><option>80mm</option><option>58mm</option></Select>
@@ -1678,7 +1694,7 @@ function Integraciones() {
 
       <Card className="p-5">
         <h2 className="font-bold text-slate-700 mb-4 text-sm">DIAN — Facturación electrónica</h2>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input label="NIT empresa" value={state.dian.nit} onChange={e => setState({ ...state, dian: { ...state.dian, nit: e.target.value } })} />
           <Input label="Software ID" value={state.dian.softwareId} onChange={e => setState({ ...state, dian: { ...state.dian, softwareId: e.target.value } })} />
           <Input label="PIN de software" type="password" value={state.dian.softwarePin} onChange={e => setState({ ...state, dian: { ...state.dian, softwarePin: e.target.value } })} />
@@ -1737,8 +1753,8 @@ function Usuarios() {
   };
 
   return (
-    <div className="p-6 flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-3">
+    <div className="p-4 sm:p-6 flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Usuarios</h1>
           <p className="text-slate-500 text-sm">{users.length} cuentas con acceso al sistema</p>
@@ -1801,6 +1817,7 @@ export default function App() {
   const [stats, setStats] = useState<DashboardStats>(emptyStats);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     restoreSession()
@@ -1833,24 +1850,57 @@ export default function App() {
   }, [sessionEmail, module]);
 
   if (!authReady) {
-    return <div className="min-h-dvh bg-white" />;
+    return (
+      <div className="mesh-navy grid min-h-dvh place-items-center">
+        <img src="/brand/promethixia-mark.svg" alt="" width={72} height={72} className="size-16 animate-shimmer drop-shadow-[0_12px_28px_rgba(59,130,246,0.45)]" />
+      </div>
+    );
   }
 
   if (!sessionEmail) {
     return <LoginScreen onSuccess={setSessionEmail} />;
   }
 
+  const moduleLabel = navItems.find(item => item.id === module)?.label ?? "Promethixia";
+
   return (
-    <div className="flex min-h-screen" style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+    <div className="flex min-h-dvh overflow-x-hidden font-body">
       <Sidebar
         active={module}
-        onNav={setModule}
+        open={menuOpen}
+        onNav={(next) => {
+          setModule(next);
+          setMenuOpen(false);
+        }}
         email={sessionEmail}
         onLogout={() => {
           void signOut().then(() => setSessionEmail(null));
         }}
       />
-      <main className="flex-1 overflow-auto bg-[#F0F4FF]">
+      {menuOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-navy-900/50 backdrop-blur-sm lg:hidden"
+          aria-label="Cerrar menú"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
+      <main className="app-canvas relative min-w-0 flex-1 overflow-auto">
+        <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Abrir menú"
+            className="grid size-10 place-items-center rounded-xl border border-slate-200 bg-white text-lg text-navy-900"
+          >
+            ☰
+          </button>
+          <div className="min-w-0">
+            <p className="truncate font-display text-sm font-bold text-navy-900">{moduleLabel}</p>
+            <p className="truncate text-xs text-slate-500">{sessionEmail}</p>
+          </div>
+        </div>
+        <div key={module} className="animate-rise">
         {module === "dashboard" && <Dashboard stats={stats} />}
         {module === "productos" && (
           <Productos
@@ -1882,6 +1932,7 @@ export default function App() {
         )}
         {module === "integraciones" && <Integraciones />}
         {module === "usuarios" && <Usuarios />}
+        </div>
       </main>
     </div>
   );

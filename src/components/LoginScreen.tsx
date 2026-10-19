@@ -57,7 +57,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
   }
 
   return (
-    <div className="grid min-h-dvh font-body lg:grid-cols-[1fr_1.05fr]">
+    <div className="grid min-h-dvh animate-fade font-body lg:grid-cols-[1fr_1.05fr]">
       <aside className="mesh-navy relative hidden overflow-hidden p-10 text-white lg:flex lg:flex-col">
         <div className="pointer-events-none absolute -bottom-24 -right-24 size-96 rounded-full bg-brand-500/25 blur-3xl" aria-hidden="true" />
         {LANDING_URL ? (
@@ -70,7 +70,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
           </span>
         )}
 
-        <div className="relative my-auto max-w-[30rem]">
+        <div className="relative my-auto max-w-[30rem] animate-rise">
           <h2 className="font-display text-[clamp(1.8rem,2.8vw,2.4rem)] font-bold leading-tight">
             Tu negocio, claro y bajo control.
           </h2>
@@ -98,7 +98,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
           )}
         </div>
 
-        <div className="mx-auto my-auto w-full max-w-[400px] py-10">
+        <div className="mx-auto my-auto w-full max-w-[400px] animate-rise py-10">
           <img
             src="/brand/promethixia-mark.svg"
             alt=""
