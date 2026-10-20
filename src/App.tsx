@@ -18,7 +18,33 @@ import {
 
 type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "integraciones" | "usuarios";
 
-type MovementType = "ENTRADA_COMPRA" | "SALIDA_VENTA" | "AJUSTE" | "ENTRADA_INICIAL" | "IMPORTACION";
+type MovementType = "ENTRADA_COMPRA" | "SALIDA_VENTA" | "AJUSTE" | "ENTRADA_INICIAL" | "IMPORTACION" | "ENTRADA_DEVOLUCION";
+type SaleStatus = "completed" | "partially_cancelled" | "cancelled";
+
+interface DaySaleItem {
+  id: number;
+  productId: number | null;
+  productName: string;
+  qty: number;
+  cancelledQty: number;
+  activeQty: number;
+  weight: number | null;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+interface DaySale {
+  id: number;
+  ticket: string;
+  clientId: number | null;
+  clientName: string | null;
+  payment: string;
+  total: number;
+  status: SaleStatus;
+  soldAt: string;
+  items: DaySaleItem[];
+  refunded?: number;
+}
 
 interface Product {
   id: number; code: string; name: string; category: string;
@@ -111,7 +137,13 @@ const emptyStats: DashboardStats = {
 
 const fmt = (n: number) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
 const movementLabel: Record<MovementType, string> = {
   ENTRADA_COMPRA: "Entrada compra",
@@ -119,6 +151,13 @@ const movementLabel: Record<MovementType, string> = {
   AJUSTE: "Ajuste",
   ENTRADA_INICIAL: "Entrada inicial",
   IMPORTACION: "Importación",
+  ENTRADA_DEVOLUCION: "Devolución",
+};
+
+const saleStatusLabel: Record<SaleStatus, string> = {
+  completed: "Completada",
+  partially_cancelled: "Parcial",
+  cancelled: "Cancelada",
 };
 
 function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]) {
@@ -1006,7 +1045,7 @@ function Inventario({ products, setProducts, movements, setMovements }: {
                     <p className="font-medium text-slate-800">{m.productName}</p>
                     <p className="text-xs font-mono text-slate-400">{m.productCode}</p>
                   </td>
-                  <td className="px-3 py-2.5"><Badge color={m.qty >= 0 ? "green" : "red"}>{movementLabel[m.type]}</Badge></td>
+                  <td className="px-3 py-2.5"><Badge color={m.qty >= 0 ? "green" : "red"}>{movementLabel[m.type] ?? m.type}</Badge></td>
                   <td className={`px-3 py-2.5 font-bold ${m.qty >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                     {m.qty > 0 ? `+${m.qty}` : m.qty}
                   </td>
@@ -1357,6 +1396,15 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
   const [amountPaid, setAmountPaid] = useState("");
   const [lastSale, setLastSale] = useState<SaleReceipt | null>(null);
   const [saleError, setSaleError] = useState("");
+  const [showDaySales, setShowDaySales] = useState(false);
+  const [salesDate, setSalesDate] = useState(todayStr());
+  const [daySales, setDaySales] = useState<DaySale[]>([]);
+  const [daySalesLoading, setDaySalesLoading] = useState(false);
+  const [daySalesError, setDaySalesError] = useState("");
+  const [selectedSale, setSelectedSale] = useState<DaySale | null>(null);
+  const [returnQty, setReturnQty] = useState<Record<number, string>>({});
+  const [returnReason, setReturnReason] = useState("");
+  const [returnBusy, setReturnBusy] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
 
   const active = tickets.find(t => t.id === activeId) ?? tickets[0];
@@ -1428,6 +1476,97 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
     setSaleError("");
     setAmountPaid(payment === "tarjeta" ? String(total) : "");
     setShowCheckout(true);
+  };
+
+  const loadDaySales = async (date = salesDate) => {
+    setDaySalesLoading(true);
+    setDaySalesError("");
+    try {
+      const list = await api<DaySale[]>(`/sales?date=${date}`);
+      setDaySales(list);
+      setSelectedSale(prev => {
+        if (!prev) return null;
+        return list.find(sale => sale.id === prev.id) ?? null;
+      });
+    } catch (err) {
+      setDaySalesError(err instanceof ApiError ? err.message : "No pudimos cargar las ventas.");
+      setDaySales([]);
+    } finally {
+      setDaySalesLoading(false);
+    }
+  };
+
+  const openDaySales = async () => {
+    const date = todayStr();
+    setSalesDate(date);
+    setShowDaySales(true);
+    setSelectedSale(null);
+    setReturnQty({});
+    setReturnReason("");
+    setDaySalesError("");
+    setDaySalesLoading(true);
+    try {
+      setDaySales(await api<DaySale[]>(`/sales?date=${date}`));
+    } catch (err) {
+      setDaySalesError(err instanceof ApiError ? err.message : "No pudimos cargar las ventas.");
+      setDaySales([]);
+    } finally {
+      setDaySalesLoading(false);
+    }
+  };
+
+  const refreshAfterReturn = async (updated: DaySale) => {
+    setSelectedSale(updated);
+    setReturnQty({});
+    setReturnReason("");
+    setProducts(normalizeProducts(await api<Product[]>("/products")));
+    setClients(await api<Client[]>("/clients"));
+    setMovements(await api<InventoryMovement[]>("/inventory/movements"));
+    await loadDaySales(salesDate);
+  };
+
+  const cancelWholeSale = async (sale: DaySale) => {
+    if (sale.status === "cancelled") return;
+    if (!window.confirm(`¿Cancelar por completo la venta ${sale.ticket}? Se devolverá el inventario.`)) return;
+    setReturnBusy(true);
+    setDaySalesError("");
+    try {
+      const updated = await api<DaySale>(`/sales/${sale.id}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({ reason: returnReason || "Cancelación total" }),
+      });
+      await refreshAfterReturn(updated);
+    } catch (err) {
+      setDaySalesError(err instanceof ApiError ? err.message : "No pudimos cancelar la venta.");
+    } finally {
+      setReturnBusy(false);
+    }
+  };
+
+  const returnSelectedItems = async (sale: DaySale) => {
+    const items = sale.items
+      .map(item => ({ itemId: item.id, qty: Number(returnQty[item.id] || 0) }))
+      .filter(entry => entry.qty > 0);
+    if (items.length === 0) {
+      setDaySalesError("Indica la cantidad a devolver en al menos un producto.");
+      return;
+    }
+    setReturnBusy(true);
+    setDaySalesError("");
+    try {
+      const updated = await api<DaySale>(`/sales/${sale.id}/returns`, {
+        method: "POST",
+        body: JSON.stringify({
+          items,
+          reason: returnReason || "Devolución / cambio",
+        }),
+      });
+      await refreshAfterReturn(updated);
+    } catch (err) {
+      setDaySalesError(err instanceof ApiError ? err.message : "No pudimos registrar la devolución.");
+    } finally {
+      setReturnBusy(false);
+    }
   };
 
   const confirmSale = async (withPrint: boolean) => {
@@ -1515,11 +1654,16 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
     <div className="flex min-h-0 flex-col gap-5 p-4 sm:p-6 lg:h-full lg:flex-row">
       {/* Left: search + products */}
       <div className="flex min-w-0 flex-1 flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-bold text-slate-800">Punto de Venta</h1>
-          <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg font-medium">
-            {tickets.length} ticket{tickets.length === 1 ? "" : "s"} abierto{tickets.length === 1 ? "" : "s"}
-          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => { void openDaySales(); }}>
+              Ventas del día
+            </Button>
+            <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg font-medium">
+              {tickets.length} ticket{tickets.length === 1 ? "" : "s"} abierto{tickets.length === 1 ? "" : "s"}
+            </span>
+          </div>
         </div>
         {/* Barcode / search */}
         <div className="relative">
@@ -1749,6 +1893,176 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
             <Button variant="ghost" onClick={() => setShowCheckout(false)} className="w-full">
               Cancelar
             </Button>
+          </div>
+        </Modal>
+      )}
+
+      {showDaySales && (
+        <Modal title="Ventas del día" onClose={() => setShowDaySales(false)}>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <Input
+                label="Fecha"
+                type="date"
+                value={salesDate}
+                onChange={e => setSalesDate(e.target.value)}
+                className="w-full sm:w-auto"
+              />
+              <Button
+                variant="secondary"
+                onClick={() => { void loadDaySales(salesDate); }}
+                disabled={daySalesLoading || !salesDate}
+              >
+                Buscar
+              </Button>
+            </div>
+
+            {daySalesError && <p className="text-sm text-red-600">{daySalesError}</p>}
+            {daySalesLoading && <p className="text-sm text-slate-500">Cargando ventas…</p>}
+
+            {!daySalesLoading && daySales.length === 0 && (
+              <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                No hay ventas en esta fecha
+              </p>
+            )}
+
+            {!selectedSale && !daySalesLoading && daySales.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {daySales.length} venta{daySales.length === 1 ? "" : "s"} · Total neto {fmt(daySales.reduce((sum, sale) => sum + sale.total, 0))}
+                </p>
+                {daySales.map(sale => (
+                  <button
+                    key={sale.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSale(sale);
+                      setReturnQty({});
+                      setReturnReason("");
+                      setDaySalesError("");
+                    }}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-brand-300 hover:bg-blue-50/40"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-800">{sale.ticket}</p>
+                        <p className="text-xs text-slate-500">
+                          {new Date(sale.soldAt).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                          {" · "}
+                          {sale.payment === "efectivo" ? "Efectivo" : "Tarjeta"}
+                          {sale.clientName ? ` · ${sale.clientName}` : ""}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-blue-700">{fmt(sale.total)}</p>
+                        <Badge color={sale.status === "cancelled" ? "red" : sale.status === "partially_cancelled" ? "yellow" : "green"}>
+                          {saleStatusLabel[sale.status]}
+                        </Badge>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {selectedSale && (
+              <div className="flex flex-col gap-4">
+                <button
+                  type="button"
+                  onClick={() => { setSelectedSale(null); setReturnQty({}); setDaySalesError(""); }}
+                  className="w-fit text-sm text-blue-600 hover:underline"
+                >
+                  ← Volver al listado
+                </button>
+
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-slate-800">{selectedSale.ticket}</p>
+                      <p className="text-xs text-slate-500">
+                        {new Date(selectedSale.soldAt).toLocaleString("es-CO")}
+                        {" · "}
+                        {selectedSale.payment === "efectivo" ? "Efectivo" : "Tarjeta"}
+                        {selectedSale.clientName ? ` · ${selectedSale.clientName}` : ""}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-bold text-blue-700">{fmt(selectedSale.total)}</p>
+                      <Badge color={selectedSale.status === "cancelled" ? "red" : selectedSale.status === "partially_cancelled" ? "yellow" : "green"}>
+                        {saleStatusLabel[selectedSale.status]}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {selectedSale.status !== "cancelled" ? (
+                  <>
+                    <p className="text-sm text-slate-600">
+                      Indica cuánto devolver por producto (cambios o devoluciones). El inventario se restaura automáticamente.
+                    </p>
+                    <div className="flex flex-col gap-3">
+                      {selectedSale.items.map(item => {
+                        const max = item.activeQty;
+                        const disabled = max <= 0;
+                        return (
+                          <div key={item.id} className={`rounded-xl border px-3 py-3 ${disabled ? "border-slate-100 bg-slate-50 opacity-70" : "border-slate-200"}`}>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-medium text-slate-800">{item.productName}</p>
+                                <p className="text-xs text-slate-500">
+                                  Vendido {item.qty}{item.weight != null ? " kg" : ""}
+                                  {item.cancelledQty > 0 ? ` · Devuelto ${item.cancelledQty}` : ""}
+                                  {" · Activo "}{item.activeQty}
+                                  {" · "}{fmt(item.lineTotal)}
+                                </p>
+                              </div>
+                              <Input
+                                label="Devolver"
+                                type="number"
+                                min="0"
+                                step={item.weight != null ? "0.01" : "1"}
+                                max={max}
+                                disabled={disabled || returnBusy}
+                                value={returnQty[item.id] ?? ""}
+                                onChange={e => setReturnQty(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                className="w-28"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <Input
+                      label="Motivo (opcional)"
+                      value={returnReason}
+                      onChange={e => setReturnReason(e.target.value)}
+                      placeholder="Cambio, devolución, error de cobro…"
+                    />
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button
+                        className="flex-1"
+                        disabled={returnBusy}
+                        onClick={() => { void returnSelectedItems(selectedSale); }}
+                      >
+                        Devolver seleccionados
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="flex-1"
+                        disabled={returnBusy}
+                        onClick={() => { void cancelWholeSale(selectedSale); }}
+                      >
+                        Cancelar venta completa
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                    Esta venta ya está cancelada por completo. El inventario fue restaurado.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </Modal>
       )}
