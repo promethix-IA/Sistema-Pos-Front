@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
+import { CierreCaja } from "./components/CierreCaja";
+import { Creditos } from "./components/Creditos";
 import { LoginScreen } from "./components/LoginScreen";
 import { api, ApiError } from "./lib/api";
 import { restoreSession, signOut } from "./lib/auth";
@@ -16,7 +18,8 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "integraciones" | "usuarios";
+type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "cierre" | "creditos" | "integraciones" | "usuarios";
+type PaymentMethod = "efectivo" | "tarjeta" | "transferencia" | "credito" | "mixto";
 
 type MovementType = "ENTRADA_COMPRA" | "SALIDA_VENTA" | "AJUSTE" | "ENTRADA_INICIAL" | "IMPORTACION" | "ENTRADA_DEVOLUCION";
 type SaleStatus = "completed" | "partially_cancelled" | "cancelled";
@@ -93,8 +96,15 @@ interface PosTicket {
   id: number;
   label: string;
   cart: CartItem[];
-  payment: "efectivo" | "tarjeta" | null;
+  payment: PaymentMethod | null;
   clientId: number | null;
+}
+
+interface PaymentAmounts {
+  efectivo: number;
+  tarjeta: number;
+  transferencia: number;
+  credito: number;
 }
 
 interface DashboardStats {
@@ -160,6 +170,14 @@ const saleStatusLabel: Record<SaleStatus, string> = {
   cancelled: "Cancelada",
 };
 
+const paymentLabel: Record<PaymentMethod, string> = {
+  efectivo: "Efectivo",
+  tarjeta: "Tarjeta",
+  transferencia: "Transferencia",
+  credito: "Crédito",
+  mixto: "Mixto",
+};
+
 function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]) {
   const esc = (v: string | number) => {
     const s = String(v);
@@ -215,7 +233,7 @@ type SaleReceipt = {
   total: number;
   paid: number;
   change: number;
-  payment: "efectivo" | "tarjeta";
+  payment: PaymentMethod;
   clientName?: string;
   printed: boolean;
 };
@@ -362,6 +380,8 @@ const navItems: { id: Module; label: string; icon: string }[] = [
   { id: "clientes", label: "Clientes", icon: "◎" },
   { id: "proveedores", label: "Proveedores", icon: "⊡" },
   { id: "ventas", label: "Punto de Venta", icon: "⊙" },
+  { id: "cierre", label: "Cierre de caja", icon: "▣" },
+  { id: "creditos", label: "Ventas a crédito", icon: "◫" },
   { id: "integraciones", label: "Integraciones", icon: "⊗" },
   { id: "usuarios", label: "Usuarios", icon: "☺" },
 ];
@@ -1405,12 +1425,20 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
   const [returnQty, setReturnQty] = useState<Record<number, string>>({});
   const [returnReason, setReturnReason] = useState("");
   const [returnBusy, setReturnBusy] = useState(false);
+  const [mixAmounts, setMixAmounts] = useState({ efectivo: "", tarjeta: "", transferencia: "", credito: "" });
+  const [shiftOpen, setShiftOpen] = useState<boolean | null>(null);
   const barcodeRef = useRef<HTMLInputElement>(null);
 
   const active = tickets.find(t => t.id === activeId) ?? tickets[0];
   const cart = active?.cart ?? [];
   const payment = active?.payment ?? null;
   const clientId = active?.clientId ?? null;
+
+  useEffect(() => {
+    api<{ id: number } | null>("/shifts/current")
+      .then(shift => setShiftOpen(!!shift))
+      .catch(() => setShiftOpen(false));
+  }, []);
 
   const updateActive = (patch: Partial<PosTicket> | ((t: PosTicket) => Partial<PosTicket>)) => {
     setTickets(prev => prev.map(t => {
@@ -1462,20 +1490,57 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
     updateActive(t => ({ cart: t.cart.filter(i => i.product.id !== id) }));
 
   const total = cart.reduce((s, i) => s + i.product.sellPrice * i.qty, 0);
-  const paidNum = Number(amountPaid);
-  const change = Number.isFinite(paidNum) ? Math.max(0, paidNum - total) : 0;
+  const mixTotal = ["efectivo", "tarjeta", "transferencia", "credito"].reduce(
+    (sum, key) => sum + (Number(mixAmounts[key as keyof typeof mixAmounts]) || 0),
+    0,
+  );
+  const creditNeedsClient = payment === "credito" || (payment === "mixto" && (Number(mixAmounts.credito) || 0) > 0);
+  const paidNum = payment === "efectivo" || payment === "mixto"
+    ? Number(amountPaid)
+    : total;
+  const change = payment === "efectivo" && Number.isFinite(paidNum) ? Math.max(0, paidNum - total) : 0;
+  const mixOk = payment !== "mixto" || Math.abs(mixTotal - total) < 0.01;
+  const mixCash = Number(mixAmounts.efectivo) || 0;
   const canConfirm =
     !!payment &&
     cart.length > 0 &&
-    Number.isFinite(paidNum) &&
-    paidNum >= total &&
-    amountPaid !== "";
+    shiftOpen === true &&
+    mixOk &&
+    (!creditNeedsClient || !!clientId) &&
+    (payment === "efectivo"
+      ? Number.isFinite(paidNum) && paidNum >= total && amountPaid !== ""
+      : payment === "mixto"
+        ? mixCash === 0 || (Number.isFinite(paidNum) && paidNum >= mixCash && amountPaid !== "")
+        : true);
 
   const openCheckout = () => {
     if (!payment || cart.length === 0) return;
+    if (shiftOpen === false) {
+      setSaleError("Abre un turno en Cierre de caja antes de vender.");
+      return;
+    }
+    if (creditNeedsClient && !clientId) {
+      setSaleError("Selecciona un cliente para ventas a crédito.");
+      return;
+    }
     setSaleError("");
-    setAmountPaid(payment === "tarjeta" ? String(total) : "");
+    if (payment === "efectivo") setAmountPaid("");
+    else if (payment === "mixto") setAmountPaid(String(Number(mixAmounts.efectivo) || total));
+    else setAmountPaid(String(total));
     setShowCheckout(true);
+  };
+
+  const buildAmounts = (): PaymentAmounts | undefined => {
+    if (!payment) return undefined;
+    if (payment === "mixto") {
+      return {
+        efectivo: Number(mixAmounts.efectivo) || 0,
+        tarjeta: Number(mixAmounts.tarjeta) || 0,
+        transferencia: Number(mixAmounts.transferencia) || 0,
+        credito: Number(mixAmounts.credito) || 0,
+      };
+    }
+    return undefined;
   };
 
   const loadDaySales = async (date = salesDate) => {
@@ -1573,11 +1638,13 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
     if (!canConfirm || !payment || !active) return;
     setSaleError("");
     try {
+      const amounts = buildAmounts();
       const saved = await api<SaleTicket>("/sales", {
         method: "POST",
         body: JSON.stringify({
           clientId,
           payment,
+          ...(amounts ? { amounts } : {}),
           items: cart.map(item => ({
             productId: item.product.id,
             qty: item.qty,
@@ -1602,7 +1669,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         clientName,
         printed: withPrint,
       };
-      openCashDrawer();
+      if (payment === "efectivo" || (payment === "mixto" && (amounts?.efectivo || 0) > 0)) openCashDrawer();
       if (withPrint) printSaleTicket(sale);
       setProducts(normalizeProducts(await api<Product[]>("/products")));
       setClients(await api<Client[]>("/clients"));
@@ -1826,16 +1893,39 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
             {/* Payment method */}
             <p className="text-xs font-semibold text-slate-500 mb-2">Método de pago</p>
             <div className="grid grid-cols-2 gap-2 mb-3">
-              {(["efectivo", "tarjeta"] as const).map(m => (
+              {(["efectivo", "tarjeta", "transferencia", "credito", "mixto"] as PaymentMethod[]).map(m => (
                 <button key={m} onClick={() => updateActive({ payment: m })}
-                  className={`py-2.5 rounded-xl text-sm font-semibold capitalize transition border-2 ${payment === m ? "border-blue-600 bg-blue-700 text-white" : "border-slate-200 text-slate-600 hover:border-blue-400"}`}>
-                  {m === "efectivo" ? "Efectivo" : "Tarjeta"}
+                  className={`py-2.5 rounded-xl text-sm font-semibold transition border-2 ${payment === m ? "border-blue-600 bg-blue-700 text-white" : "border-slate-200 text-slate-600 hover:border-blue-400"}`}>
+                  {paymentLabel[m]}
                 </button>
               ))}
             </div>
 
+            {payment === "mixto" && (
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                {(["efectivo", "tarjeta", "transferencia", "credito"] as const).map(key => (
+                  <label key={key} className="flex flex-col gap-1 text-xs">
+                    <span className="font-semibold text-slate-600">{paymentLabel[key]}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={mixAmounts[key]}
+                      onChange={e => setMixAmounts(prev => ({ ...prev, [key]: e.target.value }))}
+                      className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
+                    />
+                  </label>
+                ))}
+                <p className={`col-span-2 text-xs ${mixOk ? "text-emerald-600" : "text-red-600"}`}>
+                  Suma {fmt(mixTotal)} / Total {fmt(total)}
+                </p>
+              </div>
+            )}
+
+            {shiftOpen === false && (
+              <p className="mb-2 text-xs text-amber-700">Abre un turno en Cierre de caja para poder cobrar.</p>
+            )}
             {saleError && <p className="mb-2 text-xs text-red-600">{saleError}</p>}
-            <Button onClick={openCheckout} disabled={cart.length === 0 || !payment} className="w-full" size="lg">
+            <Button onClick={openCheckout} disabled={cart.length === 0 || !payment || shiftOpen === false} className="w-full" size="lg">
               Cobrar
             </Button>
           </div>
@@ -1848,7 +1938,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
             <div className="bg-slate-50 rounded-xl p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Método</span>
-                <span className="font-semibold text-slate-800 capitalize">{payment}</span>
+                <span className="font-semibold text-slate-800">{payment ? paymentLabel[payment] : "—"}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500 text-sm">Total a pagar</span>
@@ -1856,31 +1946,38 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
               </div>
             </div>
 
-            <Input
-              label="¿Con cuánto paga? (COP)"
-              type="number"
-              min={total}
-              step="100"
-              value={amountPaid}
-              onChange={e => setAmountPaid(e.target.value)}
-              placeholder={String(total)}
-              autoFocus
-            />
+            {(payment === "efectivo" || payment === "mixto") && (
+              <Input
+                label={payment === "mixto" ? "¿Con cuánto paga en efectivo? (COP)" : "¿Con cuánto paga? (COP)"}
+                type="number"
+                min={payment === "mixto" ? (Number(mixAmounts.efectivo) || 0) : total}
+                step="100"
+                value={amountPaid}
+                onChange={e => setAmountPaid(e.target.value)}
+                placeholder={String(payment === "mixto" ? (Number(mixAmounts.efectivo) || 0) : total)}
+                autoFocus
+              />
+            )}
 
-            <div className={`rounded-xl px-4 py-3 flex justify-between items-center ${
-              canConfirm ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
-            }`}>
-              <span className="text-sm font-medium">Cambio</span>
-              <span className="text-xl font-bold">{canConfirm ? fmt(change) : "—"}</span>
-            </div>
+            {payment === "efectivo" && (
+              <div className={`rounded-xl px-4 py-3 flex justify-between items-center ${
+                canConfirm ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
+              }`}>
+                <span className="text-sm font-medium">Cambio</span>
+                <span className="text-xl font-bold">{canConfirm ? fmt(change) : "—"}</span>
+              </div>
+            )}
 
-            {amountPaid !== "" && paidNum < total && (
+            {payment === "efectivo" && amountPaid !== "" && paidNum < total && (
               <p className="text-xs text-red-600">El monto pagado debe ser mayor o igual al total.</p>
+            )}
+            {payment === "credito" && (
+              <p className="text-xs text-amber-700">Esta venta quedará como crédito del cliente seleccionado.</p>
             )}
             {saleError && <p className="text-xs text-red-600">{saleError}</p>}
 
             <p className="text-xs text-slate-400">
-              Al confirmar se abrirá el cajón monedero.
+              Al confirmar se abrirá el cajón monedero cuando haya pago en efectivo.
             </p>
           </div>
           <div className="flex flex-col gap-2 mt-5">
@@ -1949,7 +2046,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
                         <p className="text-xs text-slate-500">
                           {new Date(sale.soldAt).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
                           {" · "}
-                          {sale.payment === "efectivo" ? "Efectivo" : "Tarjeta"}
+                          {paymentLabel[sale.payment as PaymentMethod] ?? sale.payment}
                           {sale.clientName ? ` · ${sale.clientName}` : ""}
                         </p>
                       </div>
@@ -1982,7 +2079,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
                       <p className="text-xs text-slate-500">
                         {new Date(selectedSale.soldAt).toLocaleString("es-CO")}
                         {" · "}
-                        {selectedSale.payment === "efectivo" ? "Efectivo" : "Tarjeta"}
+                        {paymentLabel[selectedSale.payment as PaymentMethod] ?? selectedSale.payment}
                         {selectedSale.clientName ? ` · ${selectedSale.clientName}` : ""}
                       </p>
                     </div>
@@ -2389,6 +2486,8 @@ export default function App() {
             movements={movements} setMovements={setMovements}
           />
         )}
+        {module === "cierre" && <CierreCaja />}
+        {module === "creditos" && <Creditos />}
         {module === "integraciones" && <Integraciones />}
         {module === "usuarios" && <Usuarios />}
         </div>
