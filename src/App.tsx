@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { LoginScreen } from "./components/LoginScreen";
 import { api, ApiError } from "./lib/api";
 import { restoreSession, signOut } from "./lib/auth";
@@ -265,10 +266,18 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 }
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/45 p-4 backdrop-blur-md animate-fade">
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-white/70 bg-white shadow-2xl animate-pop">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex h-dvh w-screen flex-col bg-navy-900/55 p-3 backdrop-blur-md animate-fade sm:p-5">
+      <div className="mx-auto flex h-full w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl animate-pop">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4">
           <h2 className="font-display text-lg font-bold text-navy-900">{title}</h2>
           <button
             onClick={onClose}
@@ -278,9 +287,10 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
             ×
           </button>
         </div>
-        <div className="p-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -513,13 +523,14 @@ function Productos({ products, setProducts, categories, setCategories, movements
     const saleMode = form.saleMode;
     const tracksInventory = saleMode === "unidad" ? true : form.tracksInventory;
     const initialStock = !editing && tracksInventory ? (Number(form.stock) || 0) : 0;
-    // saleMode / tracksInventory se persisten en el cliente (el API aún no los expone).
     const body = {
       code: form.code,
       name: form.name,
       category: form.category || "Sin categoría",
       buyPrice: Number(form.buyPrice) || 0,
       sellPrice: Number(form.sellPrice) || 0,
+      saleMode,
+      tracksInventory,
       ...(editing ? {} : { stock: initialStock }),
     };
     try {
@@ -614,7 +625,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
         if (existing) {
           await api<Product>(`/products/${existing.id}`, {
             method: "PATCH",
-            body: JSON.stringify({ code, name, category, buyPrice, sellPrice }),
+            body: JSON.stringify({ code, name, category, buyPrice, sellPrice, saleMode, tracksInventory }),
           });
           updated++;
         } else {
@@ -622,6 +633,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
             method: "POST",
             body: JSON.stringify({
               code, name, category, buyPrice, sellPrice, stock,
+              saleMode, tracksInventory,
               entryType: "IMPORTACION",
             }),
           });

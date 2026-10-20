@@ -33,7 +33,7 @@ export function getProductSaleSettings(code: string): ProductSaleSettings | null
   return readAll()[code] ?? null;
 }
 
-/** Merge API product with persisted sale settings. Units always track inventory. */
+/** Prefer API fields; fall back to local cache for older responses. Units always track inventory. */
 export function normalizeProduct<T extends {
   id: number;
   code: string;
@@ -46,11 +46,21 @@ export function normalizeProduct<T extends {
   tracksInventory?: boolean;
 }>(raw: T) {
   const stored = getProductSaleSettings(raw.code);
-  const saleMode: SaleMode = raw.saleMode ?? stored?.saleMode ?? "unidad";
+  const saleMode: SaleMode =
+    raw.saleMode === "granel" || raw.saleMode === "unidad"
+      ? raw.saleMode
+      : (stored?.saleMode ?? "unidad");
   const tracksInventory =
     saleMode === "unidad"
       ? true
-      : (raw.tracksInventory ?? stored?.tracksInventory ?? true);
+      : typeof raw.tracksInventory === "boolean"
+        ? raw.tracksInventory
+        : (stored?.tracksInventory ?? true);
+
+  // Keep local cache aligned when the API already returns these fields.
+  if (raw.saleMode === "granel" || raw.saleMode === "unidad" || typeof raw.tracksInventory === "boolean") {
+    saveProductSaleSettings(raw.code, { saleMode, tracksInventory });
+  }
 
   return {
     id: raw.id,
