@@ -3,6 +3,12 @@ import { LoginScreen } from "./components/LoginScreen";
 import { api, ApiError } from "./lib/api";
 import { restoreSession, signOut } from "./lib/auth";
 import {
+  normalizeProduct,
+  normalizeProducts,
+  saveProductSaleSettings,
+  type SaleMode,
+} from "./lib/productSettings";
+import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer
 } from "recharts";
@@ -16,6 +22,10 @@ type MovementType = "ENTRADA_COMPRA" | "SALIDA_VENTA" | "AJUSTE" | "ENTRADA_INIC
 interface Product {
   id: number; code: string; name: string; category: string;
   buyPrice: number; sellPrice: number; stock: number;
+  /** unidad = piezas; granel = peso (kg) en POS */
+  saleMode: SaleMode;
+  /** Solo aplica a granel: si es false no descuenta ni exige stock */
+  tracksInventory: boolean;
 }
 
 interface Category {
@@ -459,7 +469,10 @@ function Productos({ products, setProducts, categories, setCategories, movements
   categories: Category[]; setCategories: (c: Category[]) => void;
   movements: InventoryMovement[]; setMovements: (m: InventoryMovement[]) => void;
 }) {
-  const emptyForm = { code: "", name: "", category: "", buyPrice: "", sellPrice: "", stock: "" };
+  const emptyForm = {
+    code: "", name: "", category: "", buyPrice: "", sellPrice: "", stock: "",
+    saleMode: "unidad" as SaleMode, tracksInventory: true,
+  };
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("Todas");
   const [showModal, setShowModal] = useState(false);
@@ -490,25 +503,34 @@ function Productos({ products, setProducts, categories, setCategories, movements
     setForm({
       code: p.code, name: p.name, category: p.category,
       buyPrice: String(p.buyPrice), sellPrice: String(p.sellPrice), stock: String(p.stock),
+      saleMode: p.saleMode, tracksInventory: p.tracksInventory,
     });
     setShowModal(true);
   };
 
   const saveProduct = async () => {
     if (!form.name || !form.code) return;
+    const saleMode = form.saleMode;
+    const tracksInventory = saleMode === "unidad" ? true : form.tracksInventory;
+    const initialStock = !editing && tracksInventory ? (Number(form.stock) || 0) : 0;
+    // saleMode / tracksInventory se persisten en el cliente (el API aún no los expone).
     const body = {
       code: form.code,
       name: form.name,
       category: form.category || "Sin categoría",
       buyPrice: Number(form.buyPrice) || 0,
       sellPrice: Number(form.sellPrice) || 0,
-      ...(editing ? {} : { stock: Number(form.stock) || 0 }),
+      ...(editing ? {} : { stock: initialStock }),
     };
     try {
       const saved = editing
         ? await api<Product>(`/products/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) })
         : await api<Product>("/products", { method: "POST", body: JSON.stringify(body) });
-      setProducts(editing ? products.map(item => item.id === saved.id ? saved : item) : [...products, saved]);
+      saveProductSaleSettings(form.code, { saleMode, tracksInventory });
+      const normalized = normalizeProduct({ ...saved, saleMode, tracksInventory });
+      setProducts(editing
+        ? products.map(item => item.id === normalized.id ? normalized : item)
+        : [...products, normalized]);
       setCategories(await api<Category[]>("/categories"));
       setMovements(await api<InventoryMovement[]>("/inventory/movements"));
       setShowModal(false);
@@ -558,6 +580,8 @@ function Productos({ products, setProducts, categories, setCategories, movements
     const iBuy = idx(["precio_compra", "buyprice", "p_compra"]);
     const iSell = idx(["precio_venta", "sellprice", "p_venta"]);
     const iStock = idx(["stock", "stock_inicial", "cantidad"]);
+    const iMode = idx(["modo", "sale_mode", "tipo_venta", "unidad_granel"]);
+    const iTrack = idx(["lleva_inventario", "tracks_inventory", "inventario"]);
     if (iCode < 0 || iName < 0) {
       setImportMsg("CSV inválido. Encabezados mínimos: codigo, nombre");
       return;
@@ -574,12 +598,19 @@ function Productos({ products, setProducts, categories, setCategories, movements
         const category = (iCat >= 0 ? cols[iCat] : "") || "Sin categoría";
         const buyPrice = Number(iBuy >= 0 ? cols[iBuy] : 0) || 0;
         const sellPrice = Number(iSell >= 0 ? cols[iSell] : 0) || 0;
-        const stock = Number(iStock >= 0 ? cols[iStock] : 0) || 0;
+        const modeRaw = (iMode >= 0 ? cols[iMode] : "unidad").toLowerCase();
+        const saleMode: SaleMode = modeRaw.includes("granel") || modeRaw === "kg" || modeRaw === "peso" ? "granel" : "unidad";
+        const trackRaw = (iTrack >= 0 ? cols[iTrack] : "si").toLowerCase();
+        const tracksInventory = saleMode === "unidad"
+          ? true
+          : !(trackRaw === "no" || trackRaw === "0" || trackRaw === "false");
+        const stock = tracksInventory ? (Number(iStock >= 0 ? cols[iStock] : 0) || 0) : 0;
         if (!nextCats.some(c => c.name.toLowerCase() === category.toLowerCase())) {
           const savedCategory = await api<Category>("/categories", { method: "POST", body: JSON.stringify({ name: category }) });
           nextCats = [...nextCats, savedCategory];
         }
         const existing = products.find(p => p.code === code);
+        saveProductSaleSettings(code, { saleMode, tracksInventory });
         if (existing) {
           await api<Product>(`/products/${existing.id}`, {
             method: "PATCH",
@@ -589,13 +620,16 @@ function Productos({ products, setProducts, categories, setCategories, movements
         } else {
           await api<Product>("/products", {
             method: "POST",
-            body: JSON.stringify({ code, name, category, buyPrice, sellPrice, stock, entryType: "IMPORTACION" }),
+            body: JSON.stringify({
+              code, name, category, buyPrice, sellPrice, stock,
+              entryType: "IMPORTACION",
+            }),
           });
           added++;
         }
       }
       setCategories(await api<Category[]>("/categories"));
-      setProducts(await api<Product[]>("/products"));
+      setProducts(normalizeProducts(await api<Product[]>("/products")));
       setMovements(await api<InventoryMovement[]>("/inventory/movements"));
       setImportMsg(`Importación lista: ${added} nuevos, ${updated} actualizados.`);
     } catch (err) {
@@ -638,7 +672,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
-              {["Código", "Nombre", "Categoría", "P. Compra", "P. Venta", "Stock", ""].map(h => (
+              {["Código", "Nombre", "Categoría", "Modo", "P. Compra", "P. Venta", "Stock", ""].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -649,10 +683,26 @@ function Productos({ products, setProducts, categories, setCategories, movements
                 <td className="px-4 py-3 font-mono text-xs text-slate-500">{p.code}</td>
                 <td className="px-4 py-3 font-medium text-slate-800">{p.name}</td>
                 <td className="px-4 py-3"><Badge color="gray">{p.category}</Badge></td>
-                <td className="px-4 py-3 text-slate-600">{fmt(p.buyPrice)}</td>
-                <td className="px-4 py-3 font-semibold text-slate-800">{fmt(p.sellPrice)}</td>
                 <td className="px-4 py-3">
-                  <span className={`font-bold ${p.stock < 5 ? "text-red-600" : p.stock < 15 ? "text-amber-600" : "text-emerald-600"}`}>{p.stock}</span>
+                  <Badge color={p.saleMode === "granel" ? "blue" : "gray"}>
+                    {p.saleMode === "granel" ? "Granel" : "Unidad"}
+                  </Badge>
+                  {p.saleMode === "granel" && !p.tracksInventory && (
+                    <span className="ml-1 text-[10px] text-slate-400">sin inv.</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-slate-600">{fmt(p.buyPrice)}</td>
+                <td className="px-4 py-3 font-semibold text-slate-800">
+                  {fmt(p.sellPrice)}{p.saleMode === "granel" ? <span className="text-xs font-normal text-slate-400">/kg</span> : null}
+                </td>
+                <td className="px-4 py-3">
+                  {p.tracksInventory ? (
+                    <span className={`font-bold ${p.stock < 5 ? "text-red-600" : p.stock < 15 ? "text-amber-600" : "text-emerald-600"}`}>
+                      {p.stock}{p.saleMode === "granel" ? " kg" : ""}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400">No aplica</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button onClick={() => openEdit(p)} className="text-xs text-blue-600 hover:underline">Editar</button>
@@ -673,12 +723,52 @@ function Productos({ products, setProducts, categories, setCategories, movements
               <option value="">Seleccionar…</option>
               {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             </Select>
-            <Input label="Precio de compra (COP)" type="number" value={form.buyPrice} onChange={e => setForm({ ...form, buyPrice: e.target.value })} />
-            <Input label="Precio de venta (COP)" type="number" value={form.sellPrice} onChange={e => setForm({ ...form, sellPrice: e.target.value })} />
-            {!editing && (
-              <Input label="Stock inicial" type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className="sm:col-span-2" />
+            <Select
+              label="Venta por"
+              value={form.saleMode}
+              onChange={e => {
+                const saleMode = e.target.value as SaleMode;
+                setForm({
+                  ...form,
+                  saleMode,
+                  tracksInventory: saleMode === "unidad" ? true : form.tracksInventory,
+                });
+              }}
+            >
+              <option value="unidad">Unidad (piezas)</option>
+              <option value="granel">Granel (kg / peso)</option>
+            </Select>
+            {form.saleMode === "granel" ? (
+              <label className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={form.tracksInventory}
+                  onChange={e => setForm({ ...form, tracksInventory: e.target.checked })}
+                />
+                <span>
+                  <span className="font-semibold">Lleva inventario</span>
+                  <span className="block text-xs text-slate-500">Si está desactivado, en POS se vende por kg sin descontar stock.</span>
+                </span>
+              </label>
+            ) : (
+              <p className="text-xs text-slate-500 sm:col-span-1 self-end pb-1">Los productos por unidad siempre llevan inventario.</p>
             )}
-            {editing && (
+            <Input label={`Precio de compra (COP)${form.saleMode === "granel" ? " / kg" : ""}`} type="number" value={form.buyPrice} onChange={e => setForm({ ...form, buyPrice: e.target.value })} />
+            <Input label={`Precio de venta (COP)${form.saleMode === "granel" ? " / kg" : ""}`} type="number" value={form.sellPrice} onChange={e => setForm({ ...form, sellPrice: e.target.value })} />
+            {!editing && (form.saleMode === "unidad" || form.tracksInventory) && (
+              <Input
+                label={form.saleMode === "granel" ? "Stock inicial (kg)" : "Stock inicial (unidades)"}
+                type="number"
+                value={form.stock}
+                onChange={e => setForm({ ...form, stock: e.target.value })}
+                className="sm:col-span-2"
+              />
+            )}
+            {!editing && form.saleMode === "granel" && !form.tracksInventory && (
+              <p className="text-xs text-slate-500 sm:col-span-2">Este producto a granel no usará inventario; no se pedirá stock inicial.</p>
+            )}
+            {editing && (form.saleMode === "unidad" || form.tracksInventory) && (
               <p className="text-xs text-slate-500 sm:col-span-2">El stock se gestiona en Inventario (ajustes y entradas).</p>
             )}
           </div>
@@ -714,7 +804,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
               );
             })}
           </div>
-          <p className="text-xs text-slate-400 mt-3">CSV: codigo,nombre,categoria,precio_compra,precio_venta,stock</p>
+          <p className="text-xs text-slate-400 mt-3">CSV: codigo,nombre,categoria,precio_compra,precio_venta,stock,modo,lleva_inventario</p>
         </Modal>
       )}
     </div>
@@ -733,7 +823,8 @@ function Inventario({ products, setProducts, movements, setMovements }: {
   const [adjustError, setAdjustError] = useState("");
   const [kardexId, setKardexId] = useState<string>("");
 
-  const filteredStock = products.filter(p =>
+  const inventoried = products.filter(p => p.tracksInventory);
+  const filteredStock = inventoried.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) || p.code.includes(search)
   );
 
@@ -751,7 +842,7 @@ function Inventario({ products, setProducts, movements, setMovements }: {
           reason: adjust.reason,
         }),
       });
-      setProducts(await api<Product[]>("/products"));
+      setProducts(normalizeProducts(await api<Product[]>("/products")));
       setMovements(await api<InventoryMovement[]>("/inventory/movements"));
       setAdjust({ productId: "", qty: "", reason: "", mode: "set" });
     } catch (err) {
@@ -762,8 +853,8 @@ function Inventario({ products, setProducts, movements, setMovements }: {
   const exportGeneral = () => {
     downloadCsv(
       `inventario-general-${todayStr()}.csv`,
-      ["codigo", "nombre", "categoria", "stock", "precio_compra", "precio_venta", "valor_inventario"],
-      products.map(p => [p.code, p.name, p.category, p.stock, p.buyPrice, p.sellPrice, p.stock * p.buyPrice]),
+      ["codigo", "nombre", "categoria", "modo", "stock", "precio_compra", "precio_venta", "valor_inventario"],
+      inventoried.map(p => [p.code, p.name, p.category, p.saleMode, p.stock, p.buyPrice, p.sellPrice, p.stock * p.buyPrice]),
     );
   };
 
@@ -807,7 +898,7 @@ function Inventario({ products, setProducts, movements, setMovements }: {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Inventario</h1>
-          <p className="text-slate-500 text-sm">{products.length} productos · {movements.length} movimientos</p>
+          <p className="text-slate-500 text-sm">{inventoried.length} con inventario · {movements.length} movimientos</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="secondary" size="sm" onClick={exportGeneral}>Exportar inventario</Button>
@@ -827,11 +918,12 @@ function Inventario({ products, setProducts, movements, setMovements }: {
       {tab === "stock" && (
         <>
           <Input placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} className="w-full sm:w-72" />
+          <p className="text-xs text-slate-400">Solo productos que llevan inventario (unidad o granel con inventario).</p>
           <Card className="overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
-                  {["Código", "Producto", "Categoría", "Stock", "Valor (costo)"].map(h => (
+                  {["Código", "Producto", "Modo", "Stock", "Valor (costo)"].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -841,13 +933,16 @@ function Inventario({ products, setProducts, movements, setMovements }: {
                   <tr key={p.id} className="border-b border-slate-50">
                     <td className="px-4 py-3 font-mono text-xs text-slate-500">{p.code}</td>
                     <td className="px-4 py-3 font-medium text-slate-800">{p.name}</td>
-                    <td className="px-4 py-3"><Badge color="gray">{p.category}</Badge></td>
-                    <td className={`px-4 py-3 font-bold ${p.stock < 5 ? "text-red-600" : "text-emerald-600"}`}>{p.stock}</td>
+                    <td className="px-4 py-3"><Badge color={p.saleMode === "granel" ? "blue" : "gray"}>{p.saleMode === "granel" ? "Granel" : "Unidad"}</Badge></td>
+                    <td className={`px-4 py-3 font-bold ${p.stock < 5 ? "text-red-600" : "text-emerald-600"}`}>
+                      {p.stock}{p.saleMode === "granel" ? " kg" : ""}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{fmt(p.stock * p.buyPrice)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {filteredStock.length === 0 && <p className="text-center text-slate-400 py-10 text-sm">Sin productos con inventario</p>}
           </Card>
         </>
       )}
@@ -858,7 +953,11 @@ function Inventario({ products, setProducts, movements, setMovements }: {
           <div className="flex flex-col gap-3">
             <Select label="Producto" value={adjust.productId} onChange={e => setAdjust({ ...adjust, productId: e.target.value })}>
               <option value="">Seleccionar producto…</option>
-              {products.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name} (stock {p.stock})</option>)}
+              {inventoried.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.code} — {p.name} (stock {p.stock}{p.saleMode === "granel" ? " kg" : ""})
+                </option>
+              ))}
             </Select>
             <Select label="Tipo de ajuste" value={adjust.mode} onChange={e => setAdjust({ ...adjust, mode: e.target.value as "set" | "delta" })}>
               <option value="set">Fijar cantidad absoluta</option>
@@ -915,7 +1014,7 @@ function Inventario({ products, setProducts, movements, setMovements }: {
           <div className="flex gap-3 items-end flex-wrap">
             <Select label="Producto" value={kardexId} onChange={e => setKardexId(e.target.value)} className="w-full sm:min-w-72 sm:w-auto">
               <option value="">Seleccionar producto…</option>
-              {products.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+              {inventoried.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
             </Select>
             <Button variant="secondary" onClick={exportKardex} disabled={!kardexId}>Exportar kardex</Button>
           </div>
@@ -1084,7 +1183,7 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products, movements
     });
     setSuppliers(suppliers.map(item => item.id === updated.id ? updated : item));
     setSelected(updated);
-    setProducts(await api<Product[]>("/products"));
+    setProducts(normalizeProducts(await api<Product[]>("/products")));
     setMovements(await api<InventoryMovement[]>("/inventory/movements"));
     setShowOrder(false);
     setOrder({ productId: "", qty: "", unitPrice: "", invoice: "" });
@@ -1173,7 +1272,11 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products, movements
               });
             }}>
               <option value="">Seleccionar producto…</option>
-              {products.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+              {products.filter(p => p.tracksInventory).map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.code} — {p.name} ({p.saleMode === "granel" ? "granel" : "unidad"})
+                </option>
+              ))}
             </Select>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input label="Cantidad" type="number" min="1" value={order.qty} onChange={e => setOrder({ ...order, qty: e.target.value })} />
@@ -1282,13 +1385,14 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
     : [];
 
   const addToCart = (p: Product, weightKg?: number) => {
-    if (p.stock <= 0) return;
-    const qty = weightKg || 1;
+    const isBulk = p.saleMode === "granel";
+    if (p.tracksInventory && p.stock <= 0) return;
+    const qty = isBulk ? (weightKg || 1) : 1;
     updateActive(t => {
       const ex = t.cart.find(i => i.product.id === p.id);
       const cart = ex
         ? t.cart.map(i => i.product.id === p.id ? { ...i, qty: i.qty + qty } : i)
-        : [...t.cart, { product: p, qty, weight: weightKg }];
+        : [...t.cart, { product: p, qty, weight: isBulk ? qty : undefined }];
       return { cart };
     });
     setSearch("");
@@ -1323,7 +1427,11 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         body: JSON.stringify({
           clientId,
           payment,
-          items: cart.map(item => ({ productId: item.product.id, qty: item.qty, weight: item.weight ?? null })),
+          items: cart.map(item => ({
+            productId: item.product.id,
+            qty: item.qty,
+            weight: item.product.saleMode === "granel" ? item.qty : null,
+          })),
         }),
       });
       const code = saved.ticket;
@@ -1345,7 +1453,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
       };
       openCashDrawer();
       if (withPrint) printSaleTicket(sale);
-      setProducts(await api<Product[]>("/products"));
+      setProducts(normalizeProducts(await api<Product[]>("/products")));
       setClients(await api<Client[]>("/clients"));
       setMovements(await api<InventoryMovement[]>("/inventory/movements"));
       setShowCheckout(false);
@@ -1420,19 +1528,35 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
               <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-50 px-4 py-3 transition hover:bg-blue-50">
                 <div>
                   <p className="font-medium text-slate-800">{p.name}</p>
-                  <p className="text-xs text-slate-400 font-mono">{p.code} · Stock: {p.stock}</p>
+                  <p className="text-xs text-slate-400 font-mono">
+                    {p.code}
+                    {" · "}
+                    {p.saleMode === "granel" ? "Granel" : "Unidad"}
+                    {" · "}
+                    {p.tracksInventory
+                      ? `Stock: ${p.stock}${p.saleMode === "granel" ? " kg" : ""}`
+                      : "Sin inventario"}
+                  </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                  <span className="font-bold text-blue-700">{fmt(p.sellPrice)}</span>
-                  {p.category === "Lácteos" ? (
+                  <span className="font-bold text-blue-700">
+                    {fmt(p.sellPrice)}{p.saleMode === "granel" ? <span className="text-xs font-normal">/kg</span> : null}
+                  </span>
+                  {p.saleMode === "granel" ? (
                     <div className="flex items-center gap-1">
-                      <input type="number" placeholder="kg" value={weight} onChange={e => setWeight(e.target.value)}
+                      <input type="number" min="0.01" step="0.01" placeholder="kg" value={weight} onChange={e => setWeight(e.target.value)}
                         className="w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-center" />
-                      <Button size="sm" onClick={() => { addToCart(p, Number(weight) || 1); setWeight(""); }}>+</Button>
+                      <Button
+                        size="sm"
+                        onClick={() => { addToCart(p, Number(weight) || 1); setWeight(""); }}
+                        disabled={p.tracksInventory && p.stock <= 0}
+                      >
+                        {p.tracksInventory && p.stock <= 0 ? "Sin stock" : "+"}
+                      </Button>
                     </div>
                   ) : (
-                    <Button size="sm" onClick={() => addToCart(p)} disabled={p.stock <= 0}>
-                      {p.stock <= 0 ? "Sin stock" : "Agregar"}
+                    <Button size="sm" onClick={() => addToCart(p)} disabled={p.tracksInventory && p.stock <= 0}>
+                      {p.tracksInventory && p.stock <= 0 ? "Sin stock" : "Agregar"}
                     </Button>
                   )}
                 </div>
@@ -1501,26 +1625,35 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
           <div className="flex-1 overflow-y-auto">
             {cart.length === 0
               ? <div className="h-full flex items-center justify-center text-slate-300 text-sm">Agrega productos</div>
-              : cart.map(item => (
+              : cart.map(item => {
+                const isBulk = item.product.saleMode === "granel";
+                const step = isBulk ? 0.1 : 1;
+                const minQty = isBulk ? 0.1 : 1;
+                return (
                 <div key={item.product.id} className="flex items-center gap-2 py-2.5 border-b border-slate-50 group">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">{item.product.name}</p>
-                    <p className="text-xs text-slate-400">{item.weight ? `${item.qty}kg` : `×${item.qty}`} · {fmt(item.product.sellPrice * item.qty)}</p>
+                    <p className="text-xs text-slate-400">{isBulk ? `${item.qty}kg` : `×${item.qty}`} · {fmt(item.product.sellPrice * item.qty)}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <button onClick={() => updateActive(t => ({
-                      cart: t.cart.map(i => i.product.id === item.product.id ? { ...i, qty: Math.max(1, i.qty - 1) } : i),
+                      cart: t.cart.map(i => i.product.id === item.product.id
+                        ? { ...i, qty: Math.max(minQty, Math.round((i.qty - step) * 100) / 100) }
+                        : i),
                     }))}
                       className="w-6 h-6 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 text-sm flex items-center justify-center">−</button>
-                    <span className="text-sm w-5 text-center font-semibold">{item.weight ? item.qty.toFixed(2) : item.qty}</span>
+                    <span className="text-sm w-7 text-center font-semibold">{isBulk ? item.qty.toFixed(2) : item.qty}</span>
                     <button onClick={() => updateActive(t => ({
-                      cart: t.cart.map(i => i.product.id === item.product.id ? { ...i, qty: i.qty + (item.weight ? 0.1 : 1) } : i),
+                      cart: t.cart.map(i => i.product.id === item.product.id
+                        ? { ...i, qty: Math.round((i.qty + step) * 100) / 100 }
+                        : i),
                     }))}
                       className="w-6 h-6 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 text-sm flex items-center justify-center">+</button>
                     <button onClick={() => removeFromCart(item.product.id)} className="w-6 h-6 text-red-400 hover:text-red-600 ml-1 opacity-0 group-hover:opacity-100 transition">×</button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
           </div>
 
           {/* Total */}
@@ -1835,7 +1968,7 @@ export default function App() {
       api<Category[]>("/categories"),
       api<InventoryMovement[]>("/inventory/movements"),
     ]).then(([nextProducts, nextClients, nextSuppliers, nextStats, nextCategories, nextMovements]) => {
-      setProducts(nextProducts);
+      setProducts(normalizeProducts(nextProducts));
       setClients(nextClients);
       setSuppliers(nextSuppliers);
       setStats(nextStats);
