@@ -2,7 +2,12 @@ import { API_URL } from "./config";
 const STORAGE_KEY = "promethixia-auth";
 
 export const BRAND_NAME = "Promethixia";
-export const DEMO_MAILTO = "mailto:contacto@promethixia.com?subject=Solicitar%20demostración";
+export const CONTACT_EMAIL = "promethixia@gmail.com";
+export const DEMO_MAILTO =
+  "mailto:promethixia@gmail.com?subject=" +
+  encodeURIComponent("Quiero una prueba gratis de 15 días") +
+  "&body=" +
+  encodeURIComponent("Hola Promethixia, quiero una prueba gratis de 15 días para mirar el software.\n\nNombre del negocio:\nCiudad:\n");
 export const LANDING_URL = import.meta.env.VITE_LANDING_URL || "";
 
 export type UserRole = "admin" | "owner" | "administrador" | "cajero" | "inventario";

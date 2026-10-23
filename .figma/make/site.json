@@ -1,7 +1,12 @@
 {
-  "description": "Streamline operations for small businesses with an ERP system that manages sales, products, customers, and suppliers through an intuitive dashboard.",
+  "title": "Promethixia POS",
+  "description": "Punto de venta Promethixia: ventas, inventario, clientes y caja.",
+  "language": "es",
   "robots": {
     "index": false
+  },
+  "icons": {
+    "icon": "/brand/promethixia-mark.svg"
   },
   "accessibility": {
     "addBypassLinks": false,

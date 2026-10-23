@@ -142,7 +142,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
                 <label className="text-[0.9rem] font-bold text-navy-900" htmlFor="password">
                   Contraseña
                 </label>
-                <a className="text-[0.85rem] font-semibold text-brand-600 hover:underline" href="mailto:soporte@promethixia.com?subject=Recuperar%20contraseña">
+                <a className="text-[0.85rem] font-semibold text-brand-600 hover:underline" href="mailto:promethixia@gmail.com?subject=Recuperar%20contrase%C3%B1a">
                   ¿Olvidaste tu contraseña?
                 </a>
               </div>
@@ -210,7 +210,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
           <p className="mt-8 text-center text-[0.9rem] text-slate-500">
             ¿Aún no eres cliente?{" "}
             <a className="font-bold text-brand-600 hover:underline" href={DEMO_MAILTO}>
-              Solicita una demostración
+              Pide tu prueba gratis de 15 días
             </a>
           </p>
         </div>

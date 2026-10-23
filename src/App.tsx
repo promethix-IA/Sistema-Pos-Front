@@ -2328,11 +2328,42 @@ interface AccountUser {
   email: string;
   is_active: boolean;
   role?: UserRole;
+  plan?: string;
+  plan_label?: string;
+  plan_expires_at?: string | null;
+  subscription_status?: string;
   created_at: string;
 }
 
+function formatAdminDay(value?: string | null): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function accountPlanName(user: AccountUser): string {
+  if (user.role === "admin") return "Plataforma";
+  if (user.plan === "trial") return "Prueba gratis";
+  if (user.plan === "monthly") return "Mensual";
+  return user.plan_label || "Sin plan";
+}
+
+function accountAccess(user: AccountUser): { label: string; color: "green" | "red" | "gray" } {
+  if (!user.is_active) return { label: "Inactiva", color: "gray" };
+  if (user.role !== "admin" && user.subscription_status === "vencido") return { label: "Bloqueada", color: "red" };
+  return { label: "Activa", color: "green" };
+}
+
+function accountBlock(user: AccountUser): { date: string; hint: string } {
+  if (user.role === "admin" || !user.plan_expires_at) return { date: "No se bloquea", hint: "" };
+  const date = formatAdminDay(user.plan_expires_at);
+  const days = Math.ceil((new Date(user.plan_expires_at).getTime() - Date.now()) / 86_400_000);
+  if (user.subscription_status === "vencido" || days <= 0) return { date, hint: "Ya bloqueada" };
+  if (days === 1) return { date, hint: "Se bloquea mañana" };
+  return { date, hint: `Se bloquea en ${days} días` };
+}
+
 function Usuarios({ role }: { role: UserRole }) {
-  const emptyForm = { email: "", password: "", role: "cajero" as UserRole };
+  const emptyForm = { email: "", password: "", role: "cajero" as UserRole, plan: "trial" as "trial" | "monthly" };
   const [users, setUsers] = useState<AccountUser[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [showModal, setShowModal] = useState(false);
@@ -2359,7 +2390,7 @@ function Usuarios({ role }: { role: UserRole }) {
         body: JSON.stringify({
           email: form.email.trim(),
           password: form.password,
-          ...(isAdmin ? {} : { role: form.role }),
+          ...(isAdmin ? { plan: form.plan } : { role: form.role }),
         }),
       });
       setUsers([saved, ...users.filter(user => user.id !== saved.id)]);
@@ -2367,6 +2398,19 @@ function Usuarios({ role }: { role: UserRole }) {
       setShowModal(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No pudimos crear el usuario.");
+    }
+  };
+
+  const renewPlan = async (user: AccountUser) => {
+    setError("");
+    try {
+      const updated = await api<AccountUser>(`/users/${user.id}/subscription`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "renew" }),
+      });
+      setUsers(users.map(item => item.id === updated.id ? updated : item));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No pudimos renovar el plan.");
     }
   };
 
@@ -2388,47 +2432,87 @@ function Usuarios({ role }: { role: UserRole }) {
       <PageHeader
         title={isAdmin ? "Negocios" : "Usuarios del negocio"}
         subtitle={isAdmin
-          ? "Crea el usuario padre de cada negocio. Ellos después crean a su equipo."
+          ? "Ahí ves el plan (prueba o mensual), cuándo se creó, cuándo se bloquea y si la cuenta está activa."
           : "Crea personas de tu equipo y asígnales el rol con el que van a entrar."}
         actions={<Button onClick={() => { setError(""); setShowModal(true); }}>{isAdmin ? "+ Crear negocio" : "+ Crear usuario"}</Button>}
       />
 
       {error && !showModal && <p className="text-sm text-red-600">{error}</p>}
 
-      <Card className="overflow-hidden">
-        <table className="w-full text-sm">
+      <Card className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
-              {["Correo", "Rol", "Estado", "Creado"].map(heading => (
-                <th key={heading} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{heading}</th>
+              {(isAdmin
+                ? ["Correo", "Plan", "Fecha de creación", "Se bloquea", "Cuenta", ""]
+                : ["Correo", "Rol", "Estado", "Creado"]
+              ).map(heading => (
+                <th key={heading || "acciones"} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{heading}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {users.map(user => (
+            {users.map(user => {
+              const access = accountAccess(user);
+              const block = accountBlock(user);
+              const planName = accountPlanName(user);
+              return (
               <tr key={user.id} className="border-b border-slate-50">
-                <td className="px-4 py-3 font-medium text-slate-800">{user.email}</td>
                 <td className="px-4 py-3">
-                  {!isAdmin && user.role !== "owner" && user.role !== "admin" ? (
-                    <select
-                      value={user.role ?? "cajero"}
-                      onChange={event => { void changeRole(user, event.target.value as UserRole); }}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-brand-400"
-                    >
-                      {BUSINESS_ROLES.map(option => (
-                        <option key={option.id} value={option.id}>{option.label}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <Badge color={user.role === "admin" ? "blue" : user.role === "owner" ? "green" : "gray"}>
-                      {roleLabel(user.role)}
-                    </Badge>
+                  <p className="font-medium text-slate-800">{user.email}</p>
+                  {isAdmin && (
+                    <p className="mt-0.5 text-[0.7rem] font-semibold uppercase tracking-wide text-slate-400">{roleLabel(user.role)}</p>
                   )}
                 </td>
-                <td className="px-4 py-3"><Badge color={user.is_active ? "green" : "gray"}>{user.is_active ? "Activo" : "Inactivo"}</Badge></td>
-                <td className="px-4 py-3 text-slate-500">{new Date(user.created_at).toLocaleString("es-CO")}</td>
+                {isAdmin ? (
+                  <>
+                    <td className="px-4 py-3">
+                      <Badge color={planName === "Prueba gratis" ? "yellow" : planName === "Mensual" ? "blue" : "gray"}>
+                        {planName}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{formatAdminDay(user.created_at)}</td>
+                    <td className="px-4 py-3">
+                      <p className={`font-medium ${block.hint === "Ya bloqueada" ? "text-rose-700" : "text-slate-700"}`}>{block.date}</p>
+                      {block.hint && <p className={`mt-0.5 text-xs ${block.hint === "Ya bloqueada" ? "text-rose-600" : "text-slate-500"}`}>{block.hint}</p>}
+                    </td>
+                    <td className="px-4 py-3"><Badge color={access.color}>{access.label}</Badge></td>
+                    <td className="px-4 py-3 text-right">
+                      {user.role === "owner" && (
+                        <Button size="sm" variant={user.subscription_status === "vencido" ? "primary" : "secondary"} onClick={() => { void renewPlan(user); }}>
+                          {user.plan === "monthly" ? "Renovar un mes" : "Activar plan mensual"}
+                        </Button>
+                      )}
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="px-4 py-3">
+                      {user.role !== "owner" && user.role !== "admin" ? (
+                        <select
+                          value={user.role ?? "cajero"}
+                          onChange={event => { void changeRole(user, event.target.value as UserRole); }}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-brand-400"
+                        >
+                          {BUSINESS_ROLES.map(option => (
+                            <option key={option.id} value={option.id}>{option.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Badge color={user.role === "admin" ? "blue" : user.role === "owner" ? "green" : "gray"}>
+                          {roleLabel(user.role)}
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge color={user.is_active ? "green" : "gray"}>{user.is_active ? "Activo" : "Inactivo"}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-slate-500">{new Date(user.created_at).toLocaleString("es-CO")}</td>
+                  </>
+                )}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         {!loading && users.length === 0 && <p className="text-center text-slate-400 py-12 text-sm">Aún no hay usuarios</p>}
@@ -2436,7 +2520,7 @@ function Usuarios({ role }: { role: UserRole }) {
       </Card>
 
       {showModal && (
-        <Modal title={isAdmin ? "Crear usuario padre" : "Crear usuario"} onClose={() => setShowModal(false)}>
+        <Modal title={isAdmin ? "Crear negocio" : "Crear usuario"} onClose={() => setShowModal(false)}>
           <div className="flex flex-col gap-3">
             <Input label="Correo electrónico" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
             <Input label="Contraseña" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
@@ -2447,9 +2531,17 @@ function Usuarios({ role }: { role: UserRole }) {
                 ))}
               </Select>
             )}
+            {isAdmin && (
+              <Select label="Plan" value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value as "trial" | "monthly" })}>
+                <option value="trial">Prueba gratis 15 días</option>
+                <option value="monthly">Plan mensual</option>
+              </Select>
+            )}
             <p className="text-xs text-slate-500">
               {isAdmin
-                ? "Este usuario será dueño de su propio negocio, sin ver datos de otros."
+                ? form.plan === "trial"
+                  ? "Podrá entrar 15 días. Al vencerse la cuenta se bloquea hasta que actives el plan mensual."
+                  : "Podrá entrar 30 días. Cuando se venza, renuévalo desde esta lista."
                 : "El rol define qué puede ver y hacer al entrar. Puedes cambiarlo después."}
             </p>
             {error && <p className="text-sm text-red-600">{error}</p>}
