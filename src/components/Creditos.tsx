@@ -90,8 +90,9 @@ export function Creditos() {
     <div className="flex flex-col gap-5 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Ventas a crédito</h1>
-          <p className="text-sm text-slate-500">Saldos pendientes y abonos de clientes</p>
+          <p className="mb-1 text-[0.68rem] font-extrabold uppercase tracking-[0.22em] text-brand-600">Promethixia</p>
+          <h1 className="text-2xl font-bold tracking-tight text-navy-900 sm:text-3xl">Ventas a crédito</h1>
+          <p className="mt-1 text-sm text-slate-500">Saldos pendientes y abonos de clientes</p>
         </div>
         <div className="flex gap-1 rounded-2xl border border-white/80 bg-white/80 p-1 shadow-card">
           {([

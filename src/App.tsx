@@ -4,7 +4,7 @@ import { CierreCaja } from "./components/CierreCaja";
 import { Creditos } from "./components/Creditos";
 import { LoginScreen } from "./components/LoginScreen";
 import { api, ApiError } from "./lib/api";
-import { restoreSession, signOut } from "./lib/auth";
+import { BUSINESS_ROLES, modulesForRole, restoreSession, roleLabel, signOut, type UserRole } from "./lib/auth";
 import {
   normalizeProduct,
   normalizeProducts,
@@ -286,24 +286,24 @@ function printSaleTicket(sale: SaleReceipt) {
 
 function Badge({ children, color = "blue" }: { children: React.ReactNode; color?: "blue" | "green" | "red" | "yellow" | "gray" }) {
   const colors = {
-    blue: "border-brand-200 bg-brand-50 text-brand-700",
-    green: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    red: "border-rose-200 bg-rose-50 text-rose-700",
-    yellow: "border-amber-200 bg-amber-50 text-amber-700",
+    blue: "border-brand-200/80 bg-brand-50 text-brand-700",
+    green: "border-emerald-200/80 bg-emerald-50 text-emerald-700",
+    red: "border-rose-200/80 bg-rose-50 text-rose-700",
+    yellow: "border-amber-200/80 bg-amber-50 text-amber-800",
     gray: "border-slate-200 bg-slate-50 text-slate-600",
   };
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${colors[color]}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.7rem] font-bold uppercase tracking-wide ${colors[color]}`}>{children}</span>;
 }
 
 function Button({ children, onClick, variant = "primary", size = "md", className = "", disabled = false }: {
   children: React.ReactNode; onClick?: () => void; variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md" | "lg"; className?: string; disabled?: boolean;
 }) {
-  const base = "inline-flex items-center justify-center rounded-xl font-semibold shadow-sm transition duration-200 hover:-translate-y-px active:translate-y-0 active:scale-[0.98] focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/25 disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed";
+  const base = "inline-flex items-center justify-center rounded-2xl font-bold tracking-tight shadow-sm transition duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/25 disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed";
   const variants = {
-    primary: "bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-brand hover:brightness-110",
-    secondary: "border border-brand-200 bg-brand-50 text-brand-700 hover:border-brand-300 hover:bg-white",
-    ghost: "border border-transparent bg-white/70 text-slate-600 shadow-none hover:border-slate-200 hover:bg-white hover:text-navy-900",
+    primary: "bg-gradient-to-br from-brand-400 via-brand-600 to-brand-700 text-white shadow-brand hover:brightness-110",
+    secondary: "border border-brand-200 bg-white/80 text-brand-700 backdrop-blur hover:border-brand-300 hover:bg-brand-50",
+    ghost: "border border-transparent bg-white/50 text-slate-600 shadow-none hover:border-slate-200 hover:bg-white hover:text-navy-900",
     danger: "bg-gradient-to-br from-rose-500 to-rose-700 text-white hover:brightness-110",
   };
   const sizes = { sm: "px-3 py-1.5 text-sm gap-1.5", md: "px-4 py-2.5 text-sm gap-2", lg: "px-6 py-3 text-base gap-2" };
@@ -316,8 +316,21 @@ function Button({ children, onClick, variant = "primary", size = "md", className
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-white/80 bg-white/90 shadow-card backdrop-blur-sm transition duration-300 hover:border-brand-200/70 hover:shadow-lg ${className}`}>
+    <div className={`rounded-3xl border border-white/80 bg-white/80 shadow-card backdrop-blur-md transition duration-300 hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-glow ${className}`}>
       {children}
+    </div>
+  );
+}
+
+function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <p className="mb-1 text-[0.68rem] font-extrabold uppercase tracking-[0.22em] text-brand-600">Promethixia</p>
+        <h1 className="text-2xl font-bold tracking-tight text-navy-900 sm:text-3xl">{title}</h1>
+        {subtitle && <p className="mt-1 max-w-xl text-sm text-slate-500">{subtitle}</p>}
+      </div>
+      {actions}
     </div>
   );
 }
@@ -332,13 +345,13 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
   }, []);
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex h-dvh w-screen flex-col bg-navy-900/55 p-3 backdrop-blur-md animate-fade sm:p-5">
-      <div className="mx-auto flex h-full w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl animate-pop">
-        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4">
+    <div className="fixed inset-0 z-[100] flex h-dvh w-screen flex-col bg-navy-900/60 p-3 backdrop-blur-xl animate-fade sm:p-5">
+      <div className="mx-auto flex h-full w-full max-w-lg flex-col overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/95 shadow-2xl animate-pop">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100/80 bg-gradient-to-r from-white to-brand-50/40 px-6 py-4">
           <h2 className="font-display text-lg font-bold text-navy-900">{title}</h2>
           <button
             onClick={onClose}
-            className="grid size-9 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-navy-900"
+            className="grid size-9 place-items-center rounded-full text-slate-400 transition hover:bg-white hover:text-navy-900 hover:shadow-sm"
             aria-label="Cerrar"
           >
             ×
@@ -355,7 +368,7 @@ function Input({ label, ...props }: { label?: string } & React.InputHTMLAttribut
   return (
     <div className="flex flex-col gap-1.5">
       {label && <label className="text-sm font-semibold text-navy-900">{label}</label>}
-      <input {...props} className={`rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-navy-900 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15 ${props.className ?? ""}`} />
+      <input {...props} className={`rounded-2xl border border-slate-200 bg-white/90 px-3.5 py-2.5 text-sm text-navy-900 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15 ${props.className ?? ""}`} />
     </div>
   );
 }
@@ -364,7 +377,7 @@ function Select({ label, children, className = "", ...props }: { label?: string 
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
       {label && <label className="text-sm font-semibold text-navy-900">{label}</label>}
-      <select {...props} className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-navy-900 outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15">
+      <select {...props} className="rounded-2xl border border-slate-200 bg-white/90 px-3.5 py-2.5 text-sm text-navy-900 outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15">
         {children}
       </select>
     </div>
@@ -373,62 +386,112 @@ function Select({ label, children, className = "", ...props }: { label?: string 
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-const navItems: { id: Module; label: string; icon: string }[] = [
-  { id: "dashboard", label: "Dashboard", icon: "▦" },
-  { id: "productos", label: "Productos", icon: "⊞" },
-  { id: "inventario", label: "Inventario", icon: "▤" },
-  { id: "clientes", label: "Clientes", icon: "◎" },
-  { id: "proveedores", label: "Proveedores", icon: "⊡" },
-  { id: "ventas", label: "Punto de Venta", icon: "⊙" },
-  { id: "cierre", label: "Cierre de caja", icon: "▣" },
-  { id: "creditos", label: "Ventas a crédito", icon: "◫" },
-  { id: "integraciones", label: "Integraciones", icon: "⊗" },
-  { id: "usuarios", label: "Usuarios", icon: "☺" },
+const navItems: { id: Module; label: string }[] = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "productos", label: "Productos" },
+  { id: "inventario", label: "Inventario" },
+  { id: "clientes", label: "Clientes" },
+  { id: "proveedores", label: "Proveedores" },
+  { id: "ventas", label: "Punto de Venta" },
+  { id: "cierre", label: "Cierre de caja" },
+  { id: "creditos", label: "Ventas a crédito" },
+  { id: "integraciones", label: "Integraciones" },
+  { id: "usuarios", label: "Usuarios" },
 ];
 
-function Sidebar({ active, onNav, email, onLogout, open }: { active: Module; onNav: (m: Module) => void; email: string; onLogout: () => void; open: boolean }) {
+function NavIcon({ id }: { id: Module }) {
+  const common = "size-4";
+  const icons: Record<Module, React.ReactNode> = {
+    dashboard: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 5h7v7H4V5Zm9 0h7v4h-7V5ZM4 14h7v5H4v-5Zm9 6V11h7v9h-7Z" /></svg>,
+    productos: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.5 12 4 3 8.5v7L12 20l9-4.5v-7ZM3 8.5l9 4.5 9-4.5M12 13v7" /></svg>,
+    inventario: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16v12H4V7Zm0 4h16M9 7V5h6v2" /></svg>,
+    clientes: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 20a8 8 0 0 1 16 0" /></svg>,
+    proveedores: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M3 17h18M5 17V8l5 3 4-4 5 5v5" /></svg>,
+    ventas: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16l-1.2 9.2A2 2 0 0 1 16.8 18H8.2a2 2 0 0 1-2-1.8L5 7Zm4-3h6" /></svg>,
+    cierre: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 10h16v8H4v-8Zm2-4h12v4H6V6Zm6 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" /></svg>,
+    creditos: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16v10H4V7Zm0 3h16M8 15h3" /></svg>,
+    integraciones: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M8 9V5h8v4M8 15v4h8v-4M5 9h14v6H5V9Z" /></svg>,
+    usuarios: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM8 13a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm0 2c-3 0-5 1.8-5 4v1h10v-1c0-2.2-2-4-5-4Zm8 0c-.7 0-1.4.1-2 .4 1.5.9 2.5 2.3 2.5 4v.6H21v-.6c0-2.2-1.8-4.4-5-4.4Z" /></svg>,
+  };
+  return icons[id];
+}
+
+function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, items }: {
+  active: Module; onNav: (m: Module) => void; email: string; onLogout: () => void;
+  open: boolean; collapsed: boolean; onToggle: () => void; items: typeof navItems;
+}) {
   return (
-    <aside className={`mesh-navy fixed inset-y-0 left-0 z-50 flex h-dvh w-72 max-w-[85vw] shrink-0 select-none flex-col overflow-hidden text-white transition duration-300 lg:static lg:z-auto lg:h-screen lg:w-64 lg:max-w-none ${open ? "" : "drawer-closed"}`}>
-      <div className="pointer-events-none absolute -right-16 top-24 size-48 rounded-full bg-brand-400/20 blur-3xl" aria-hidden="true" />
-      <div className="relative border-b border-white/10 px-5 py-6">
-        <div className="flex items-center gap-3">
-          <img src="/brand/promethixia-mark.svg" alt="" width={40} height={40} className="size-10 drop-shadow-[0_8px_16px_rgba(59,130,246,0.45)]" />
-          <div>
-            <p className="font-display text-sm font-bold leading-tight">Promethixia</p>
-            <p className="text-xs text-brand-200">Punto de venta</p>
+    <aside className={`mesh-navy group/sidebar fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] shrink-0 select-none text-white transition-[width,translate] duration-300 lg:static lg:z-auto lg:min-h-dvh lg:self-stretch lg:max-w-none ${open ? "" : "drawer-closed"} ${collapsed ? "lg:w-[4.75rem]" : "lg:w-[17.5rem]"}`}>
+      <div className="relative flex h-dvh flex-col overflow-hidden lg:sticky lg:top-0">
+      <span className="aurora-orb top-8 -right-10 size-40 bg-cyan-400/30" />
+      <span className="aurora-orb bottom-24 -left-12 size-44 bg-brand-500/40" style={{ animationDelay: "1.4s" }} />
+      <div className={`relative border-b border-white/10 px-4 py-5 ${collapsed ? "lg:px-2 lg:py-4" : ""}`}>
+        <div className={`flex items-center justify-between gap-2 ${collapsed ? "lg:flex-col" : ""}`}>
+          <div className="flex min-w-0 items-center gap-3">
+            <img src="/brand/promethixia-mark.svg" alt="" width={42} height={42} className="size-10 shrink-0 drop-shadow-[0_8px_18px_rgba(34,211,238,0.35)]" />
+            <div className={collapsed ? "lg:hidden" : ""}>
+              <p className="font-display text-sm font-bold leading-tight">Promethixia</p>
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">Punto de venta</p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="hidden size-9 shrink-0 place-items-center rounded-xl border border-white/15 bg-white/8 text-cyan-100 transition hover:bg-white/15 hover:text-white lg:grid"
+            aria-label={collapsed ? "Mostrar menú" : "Ocultar menú"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Mostrar menú" : "Ocultar menú"}
+          >
+            <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              {collapsed
+                ? <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                : <path strokeLinecap="round" strokeLinejoin="round" d="M15 5l-7 7 7 7" />}
+            </svg>
+          </button>
         </div>
       </div>
-      <nav className="relative flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
-        {navItems.map(item => (
+      <nav className={`relative z-10 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-3 ${collapsed ? "lg:px-2" : ""}`}>
+        {items.map(item => (
           <button
             key={item.id}
             onClick={() => onNav(item.id)}
-            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition duration-200
+            title={item.label}
+            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm font-semibold transition duration-200
+              ${collapsed ? "lg:justify-center lg:gap-0 lg:px-0" : ""}
               ${active === item.id
-                ? "bg-white text-navy-900 shadow-lg shadow-black/10"
-                : "text-blue-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white"
+                ? "bg-white text-navy-900 shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
+                : "text-blue-100/90 hover:bg-white/10 hover:text-white"
               }`}
           >
-            <span className={`grid size-8 place-items-center rounded-lg text-sm ${active === item.id ? "bg-brand-50 text-brand-700" : "bg-white/10"}`}>
-              {item.icon}
+            <span className={`grid size-8 shrink-0 place-items-center rounded-xl ${active === item.id ? "bg-gradient-to-br from-brand-50 to-cyan-100 text-brand-700" : "bg-white/10 text-cyan-100"}`}>
+              <NavIcon id={item.id} />
             </span>
-            {item.label}
+            <span className={`truncate ${collapsed ? "lg:hidden" : ""}`}>{item.label}</span>
           </button>
         ))}
       </nav>
-      <div className="relative flex flex-col gap-3 px-4 pb-5">
-        <div className="rounded-2xl border border-white/10 bg-white/8 p-3 text-xs text-blue-100 backdrop-blur">
-          <p className="mb-1 font-semibold text-white">Tienda Central</p>
-          <p className="truncate text-brand-100">{email}</p>
+      <div className={`relative z-10 mt-auto flex shrink-0 flex-col gap-3 px-4 pb-5 pt-2 ${collapsed ? "lg:items-center lg:px-2" : ""}`}>
+        <div className={`rounded-2xl border border-white/15 bg-white/8 p-3 text-xs text-blue-100 backdrop-blur-md ${collapsed ? "lg:grid lg:size-10 lg:place-items-center lg:p-0" : ""}`} title={email}>
+          {collapsed ? (
+            <span className="hidden text-sm font-bold text-white lg:inline">{email.slice(0, 1).toUpperCase()}</span>
+          ) : null}
+          <div className={collapsed ? "lg:hidden" : ""}>
+            <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-cyan-300">Sesión</p>
+            <p className="truncate font-semibold text-white">{email}</p>
+          </div>
         </div>
         <button
           type="button"
           onClick={onLogout}
-          className="w-full rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-blue-100 transition hover:bg-white/10 hover:text-white"
+          title="Cerrar sesión"
+          className={`w-full rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-blue-100 transition hover:bg-white/12 hover:text-white ${collapsed ? "lg:grid lg:size-10 lg:place-items-center lg:px-0 lg:py-0" : ""}`}
         >
-          Cerrar sesión
+          <svg className={`size-4 shrink-0 ${collapsed ? "hidden lg:block" : "hidden"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H4m11 0-3-3m3 3-3 3M10 5h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-7" />
+          </svg>
+          <span className={collapsed ? "lg:hidden" : ""}>Cerrar sesión</span>
         </button>
+      </div>
       </div>
     </aside>
   );
@@ -447,23 +510,19 @@ function Dashboard({ stats }: { stats: DashboardStats }) {
 
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-        <p className="text-slate-500 text-sm capitalize">{dateLabel}</p>
-      </div>
+      <PageHeader title="Dashboard" subtitle={dateLabel} />
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {[
-          { label: "Ventas Hoy", value: fmt(stats.today), sub: stats.todayChange, color: "text-emerald-700", bg: "border-emerald-200 bg-emerald-50", bar: "from-emerald-400 to-emerald-600" },
-          { label: "Ventas Semana", value: fmt(stats.week), sub: stats.weekChange, color: "text-brand-700", bg: "border-brand-200 bg-brand-50", bar: "from-brand-400 to-brand-700" },
-          { label: "Ventas Año", value: fmt(stats.year), sub: "Acumulado del año", color: "text-violet-700", bg: "border-violet-200 bg-violet-50", bar: "from-violet-400 to-violet-700" },
+          { label: "Ventas hoy", value: fmt(stats.today), sub: stats.todayChange, orb: "from-emerald-400 to-cyan-400", tint: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+          { label: "Ventas semana", value: fmt(stats.week), sub: stats.weekChange, orb: "from-brand-400 to-cyan-300", tint: "text-brand-700 bg-brand-50 border-brand-200" },
+          { label: "Ventas año", value: fmt(stats.year), sub: "Acumulado del año", orb: "from-violet-400 to-brand-400", tint: "text-violet-700 bg-violet-50 border-violet-200" },
         ].map((card, index) => (
-          <Card key={card.label} className="relative overflow-hidden p-5 animate-rise hover:-translate-y-1">
-            <span className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${card.bar}`} />
-            <p className="mb-2 text-sm font-medium text-slate-500" style={{ animationDelay: `${index * 70}ms` }}>{card.label}</p>
-            <p className="mb-2 font-display text-2xl font-bold text-navy-900">{card.value}</p>
-            <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${card.bg} ${card.color}`}>{card.sub}</span>
+          <Card key={card.label} className="relative overflow-hidden p-5 animate-rise">
+            <span className={`absolute -right-8 -top-10 size-28 rounded-full bg-gradient-to-br ${card.orb} opacity-30 blur-2xl`} />
+            <p className="mb-2 text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-500" style={{ animationDelay: `${index * 70}ms` }}>{card.label}</p>
+            <p className="mb-3 font-display text-3xl font-extrabold tracking-tight text-navy-900">{card.value}</p>
+            <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${card.tint}`}>{card.sub}</span>
           </Card>
         ))}
       </div>
@@ -472,11 +531,11 @@ function Dashboard({ stats }: { stats: DashboardStats }) {
         {/* Sales Chart */}
         <Card className="p-5 xl:col-span-3">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-bold text-slate-700">Ventas por período</h2>
-            <div className="flex gap-1">
+            <h2 className="font-bold text-navy-900">Ventas por período</h2>
+            <div className="flex gap-1 rounded-xl bg-slate-100/80 p-1">
               {(["semana", "mes"] as const).map(v => (
                 <button key={v} onClick={() => setChartView(v)}
-                  className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${chartView === v ? "bg-navy-900 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-white"}`}>
+                  className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${chartView === v ? "bg-navy-900 text-white shadow-sm" : "text-slate-600 hover:bg-white"}`}>
                   {v === "semana" ? "Esta semana" : "Este año"}
                 </button>
               ))}
@@ -497,11 +556,11 @@ function Dashboard({ stats }: { stats: DashboardStats }) {
         {/* Top Products & Low Stock */}
         <div className="flex flex-col gap-4 xl:col-span-2">
           <Card className="p-5 flex-1">
-            <h2 className="font-bold text-slate-700 mb-3">Más vendidos</h2>
+            <h2 className="mb-3 font-bold text-navy-900">Más vendidos</h2>
             <div className="flex flex-col gap-2">
               {topProducts.map((p, i) => (
                 <div key={p.id} className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-cyan-400 text-xs font-bold text-white">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-700 truncate">{p.name}</p>
                     <p className="text-xs text-slate-400">{fmt(p.sellPrice)}</p>
@@ -513,7 +572,7 @@ function Dashboard({ stats }: { stats: DashboardStats }) {
           <Card className="p-5">
             <div className="flex items-center gap-2 mb-3">
               <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-              <h2 className="font-bold text-slate-700">Stock bajo</h2>
+              <h2 className="font-bold text-navy-900">Stock bajo</h2>
             </div>
             {lowStock.length === 0
               ? <p className="text-sm text-slate-400">Sin alertas de stock</p>
@@ -711,19 +770,19 @@ function Productos({ products, setProducts, categories, setCategories, movements
 
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Productos</h1>
-          <p className="text-slate-500 text-sm">{products.length} productos · {categories.length} categorías</p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="secondary" onClick={() => setShowCats(true)}>Categorías</Button>
-          <Button variant="secondary" onClick={() => importRef.current?.click()}>Importar CSV</Button>
-          <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
-          <Button onClick={openCreate}>+ Agregar producto</Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Productos"
+        subtitle={`${products.length} productos · ${categories.length} categorías`}
+        actions={
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="secondary" onClick={() => setShowCats(true)}>Categorías</Button>
+            <Button variant="secondary" onClick={() => importRef.current?.click()}>Importar CSV</Button>
+            <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
+            <Button onClick={openCreate}>+ Agregar producto</Button>
+          </div>
+        }
+      />
 
       {importMsg && (
         <div className="bg-blue-50 text-blue-700 rounded-xl px-4 py-3 text-sm flex justify-between items-center">
@@ -776,7 +835,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => openEdit(p)} className="text-xs text-blue-600 hover:underline">Editar</button>
+                  <button onClick={() => openEdit(p)} className="text-xs font-semibold text-brand-600 hover:underline">Editar</button>
                 </td>
               </tr>
             ))}
@@ -966,16 +1025,16 @@ function Inventario({ products, setProducts, movements, setMovements }: {
 
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Inventario</h1>
-          <p className="text-slate-500 text-sm">{inventoried.length} con inventario · {movements.length} movimientos</p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="secondary" size="sm" onClick={exportGeneral}>Exportar inventario</Button>
-          <Button variant="secondary" size="sm" onClick={exportMovements}>Exportar movimientos</Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Inventario"
+        subtitle={`${inventoried.length} con inventario · ${movements.length} movimientos`}
+        actions={
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="secondary" size="sm" onClick={exportGeneral}>Exportar inventario</Button>
+            <Button variant="secondary" size="sm" onClick={exportMovements}>Exportar movimientos</Button>
+          </div>
+        }
+      />
 
       <div className="flex w-full flex-wrap gap-1 rounded-2xl border border-white/80 bg-white/80 p-1 shadow-card backdrop-blur sm:w-fit">
         {tabs.map(t => (
@@ -1149,13 +1208,13 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => setDetail(null)}>← Volver</Button>
         <div>
-          <h1 className="text-xl font-bold text-slate-800">{detail.name}</h1>
+          <h1 className="text-xl font-bold tracking-tight text-navy-900">{detail.name}</h1>
           <p className="text-slate-500 text-sm">{detail.phone} · {detail.email}</p>
           <p className="text-slate-500 text-sm">{detail.address || "Sin dirección"} · Cédula {detail.idNumber || "—"} · Nacimiento {detail.birthDate || "—"}</p>
         </div>
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="p-4"><p className="text-xs text-slate-500 mb-1">Total comprado</p><p className="text-xl font-bold text-blue-700">{fmt(detail.totalBought)}</p></Card>
+        <Card className="p-4"><p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Total comprado</p><p className="font-display text-xl font-extrabold text-brand-700">{fmt(detail.totalBought)}</p></Card>
         <Card className="p-4"><p className="text-xs text-slate-500 mb-1">Última compra</p><p className="text-xl font-bold text-slate-700">{detail.lastPurchase}</p></Card>
         <Card className="p-4"><p className="text-xs text-slate-500 mb-1">Pedidos</p><p className="text-xl font-bold text-slate-700">{detail.history.length}</p></Card>
       </div>
@@ -1180,10 +1239,7 @@ function Clientes({ clients, setClients }: { clients: Client[]; setClients: (c: 
 
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="text-2xl font-bold text-slate-800">Clientes</h1><p className="text-slate-500 text-sm">{clients.length} clientes</p></div>
-        <Button onClick={() => setShowModal(true)}>+ Agregar cliente</Button>
-      </div>
+      <PageHeader title="Clientes" subtitle={`${clients.length} clientes`} actions={<Button onClick={() => setShowModal(true)}>+ Agregar cliente</Button>} />
       <Input placeholder="Buscar por nombre o teléfono..." value={search} onChange={e => setSearch(e.target.value)} className="w-full sm:w-72" />
       <Card className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -1270,10 +1326,7 @@ function Proveedores({ suppliers, setSuppliers, setProducts, products, movements
 
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="text-2xl font-bold text-slate-800">Proveedores</h1><p className="text-slate-500 text-sm">{suppliers.length} proveedores</p></div>
-        <Button onClick={() => setShowNew(true)}>+ Agregar proveedor</Button>
-      </div>
+      <PageHeader title="Proveedores" subtitle={`${suppliers.length} proveedores`} actions={<Button onClick={() => setShowNew(true)}>+ Agregar proveedor</Button>} />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         {/* Supplier list */}
@@ -1721,17 +1774,20 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
     <div className="flex min-h-0 flex-col gap-5 p-4 sm:p-6 lg:h-full lg:flex-row">
       {/* Left: search + products */}
       <div className="flex min-w-0 flex-1 flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold text-slate-800">Punto de Venta</h1>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => { void openDaySales(); }}>
-              Ventas del día
-            </Button>
-            <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg font-medium">
-              {tickets.length} ticket{tickets.length === 1 ? "" : "s"} abierto{tickets.length === 1 ? "" : "s"}
-            </span>
-          </div>
-        </div>
+        <PageHeader
+          title="Punto de Venta"
+          subtitle="Busca, escanea y cobra en segundos"
+          actions={
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => { void openDaySales(); }}>
+                Ventas del día
+              </Button>
+              <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700">
+                {tickets.length} ticket{tickets.length === 1 ? "" : "s"} abierto{tickets.length === 1 ? "" : "s"}
+              </span>
+            </div>
+          }
+        />
         {/* Barcode / search */}
         <div className="relative">
           <input
@@ -1739,7 +1795,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar producto o escanear código de barras..."
-            className="w-full border-2 border-blue-300 rounded-xl px-5 py-4 text-base focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200 transition font-medium"
+            className="w-full rounded-2xl border-2 border-brand-200 bg-white/90 px-5 py-4 text-base font-medium shadow-card outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15"
           />
           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 text-xl">⌕</span>
         </div>
@@ -1762,7 +1818,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                  <span className="font-bold text-blue-700">
+                  <span className="font-display font-bold text-brand-700">
                     {fmt(p.sellPrice)}{p.saleMode === "granel" ? <span className="text-xs font-normal">/kg</span> : null}
                   </span>
                   {p.saleMode === "granel" ? (
@@ -1833,7 +1889,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
           <button
             onClick={openTicket}
             title="Nuevo ticket"
-            className="shrink-0 w-8 h-8 rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-700 hover:bg-blue-50 text-lg font-semibold flex items-center justify-center transition"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-300 text-lg font-semibold text-slate-500 transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700"
           >+</button>
         </div>
 
@@ -1887,7 +1943,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
             </div>
             <div className="flex justify-between items-center mb-4">
               <span className="font-bold text-slate-800">Total</span>
-              <span className="text-xl font-bold text-blue-700">{fmt(total)}</span>
+              <span className="font-display text-xl font-extrabold text-brand-700">{fmt(total)}</span>
             </div>
 
             {/* Payment method */}
@@ -1895,7 +1951,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
             <div className="grid grid-cols-2 gap-2 mb-3">
               {(["efectivo", "tarjeta", "transferencia", "credito", "mixto"] as PaymentMethod[]).map(m => (
                 <button key={m} onClick={() => updateActive({ payment: m })}
-                  className={`py-2.5 rounded-xl text-sm font-semibold transition border-2 ${payment === m ? "border-blue-600 bg-blue-700 text-white" : "border-slate-200 text-slate-600 hover:border-blue-400"}`}>
+                  className={`py-2.5 rounded-xl text-sm font-semibold transition border-2 ${payment === m ? "border-brand-600 bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-brand" : "border-slate-200 text-slate-600 hover:border-brand-300 hover:bg-brand-50"}`}>
                   {paymentLabel[m]}
                 </button>
               ))}
@@ -1942,7 +1998,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500 text-sm">Total a pagar</span>
-                <span className="text-2xl font-bold text-blue-700">{fmt(total)}</span>
+                <span className="font-display text-2xl font-extrabold text-brand-700">{fmt(total)}</span>
               </div>
             </div>
 
@@ -2203,18 +2259,18 @@ function Integraciones() {
 
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Integraciones</h1>
-        <p className="text-slate-500 text-sm">Estado de periféricos y servicios externos</p>
-        {notice && <p className="text-sm text-blue-700 mt-1">{notice}</p>}
-      </div>
+      <PageHeader
+        title="Integraciones"
+        subtitle="Estado de periféricos y servicios externos"
+      />
+      {notice && <p className="-mt-2 text-sm font-semibold text-brand-700">{notice}</p>}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {peripherals.map(p => (
           <Card key={p.id} className="p-5">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl ${p.connected ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-400"}`}>{p.icon}</div>
+                <div className={`flex h-11 w-11 items-center justify-center rounded-2xl text-xl ${p.connected ? "bg-gradient-to-br from-brand-50 to-cyan-100 text-brand-700" : "bg-slate-100 text-slate-400"}`}>{p.icon}</div>
                 <div>
                   <p className="font-semibold text-slate-800 text-sm">{p.label}</p>
                   <p className="text-xs font-mono text-slate-400 mt-0.5">{p.port}</p>
@@ -2271,16 +2327,18 @@ interface AccountUser {
   id: number;
   email: string;
   is_active: boolean;
+  role?: UserRole;
   created_at: string;
 }
 
-function Usuarios() {
-  const emptyForm = { email: "", password: "" };
+function Usuarios({ role }: { role: UserRole }) {
+  const emptyForm = { email: "", password: "", role: "cajero" as UserRole };
   const [users, setUsers] = useState<AccountUser[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const isAdmin = role === "admin";
 
   const loadUsers = async () => {
     setUsers(await api<AccountUser[]>("/users"));
@@ -2293,12 +2351,16 @@ function Usuarios() {
   }, []);
 
   const createUser = async () => {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.password.length < 6) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.password.length < 8) return;
     setError("");
     try {
       const saved = await api<AccountUser>("/users", {
         method: "POST",
-        body: JSON.stringify({ email: form.email.trim(), password: form.password }),
+        body: JSON.stringify({
+          email: form.email.trim(),
+          password: form.password,
+          ...(isAdmin ? {} : { role: form.role }),
+        }),
       });
       setUsers([saved, ...users.filter(user => user.id !== saved.id)]);
       setForm(emptyForm);
@@ -2308,15 +2370,28 @@ function Usuarios() {
     }
   };
 
+  const changeRole = async (user: AccountUser, nextRole: UserRole) => {
+    setError("");
+    try {
+      const updated = await api<AccountUser>(`/users/${user.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: nextRole }),
+      });
+      setUsers(users.map(item => item.id === updated.id ? updated : item));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No pudimos cambiar el rol.");
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Usuarios</h1>
-          <p className="text-slate-500 text-sm">{users.length} cuentas con acceso al sistema</p>
-        </div>
-        <Button onClick={() => { setError(""); setShowModal(true); }}>+ Crear usuario</Button>
-      </div>
+      <PageHeader
+        title={isAdmin ? "Negocios" : "Usuarios del negocio"}
+        subtitle={isAdmin
+          ? "Crea el usuario padre de cada negocio. Ellos después crean a su equipo."
+          : "Crea personas de tu equipo y asígnales el rol con el que van a entrar."}
+        actions={<Button onClick={() => { setError(""); setShowModal(true); }}>{isAdmin ? "+ Crear negocio" : "+ Crear usuario"}</Button>}
+      />
 
       {error && !showModal && <p className="text-sm text-red-600">{error}</p>}
 
@@ -2324,7 +2399,7 @@ function Usuarios() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
-              {["Correo", "Estado", "Creado"].map(heading => (
+              {["Correo", "Rol", "Estado", "Creado"].map(heading => (
                 <th key={heading} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{heading}</th>
               ))}
             </tr>
@@ -2333,6 +2408,23 @@ function Usuarios() {
             {users.map(user => (
               <tr key={user.id} className="border-b border-slate-50">
                 <td className="px-4 py-3 font-medium text-slate-800">{user.email}</td>
+                <td className="px-4 py-3">
+                  {!isAdmin && user.role !== "owner" && user.role !== "admin" ? (
+                    <select
+                      value={user.role ?? "cajero"}
+                      onChange={event => { void changeRole(user, event.target.value as UserRole); }}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-brand-400"
+                    >
+                      {BUSINESS_ROLES.map(option => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Badge color={user.role === "admin" ? "blue" : user.role === "owner" ? "green" : "gray"}>
+                      {roleLabel(user.role)}
+                    </Badge>
+                  )}
+                </td>
                 <td className="px-4 py-3"><Badge color={user.is_active ? "green" : "gray"}>{user.is_active ? "Activo" : "Inactivo"}</Badge></td>
                 <td className="px-4 py-3 text-slate-500">{new Date(user.created_at).toLocaleString("es-CO")}</td>
               </tr>
@@ -2344,16 +2436,27 @@ function Usuarios() {
       </Card>
 
       {showModal && (
-        <Modal title="Crear usuario" onClose={() => setShowModal(false)}>
+        <Modal title={isAdmin ? "Crear usuario padre" : "Crear usuario"} onClose={() => setShowModal(false)}>
           <div className="flex flex-col gap-3">
             <Input label="Correo electrónico" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
             <Input label="Contraseña" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-            <p className="text-xs text-slate-500">Mínimo 6 caracteres. La persona entra con este correo y esta contraseña.</p>
+            {!isAdmin && (
+              <Select label="Rol" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as UserRole })}>
+                {BUSINESS_ROLES.map(option => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </Select>
+            )}
+            <p className="text-xs text-slate-500">
+              {isAdmin
+                ? "Este usuario será dueño de su propio negocio, sin ver datos de otros."
+                : "El rol define qué puede ver y hacer al entrar. Puedes cambiarlo después."}
+            </p>
             {error && <p className="text-sm text-red-600">{error}</p>}
           </div>
           <div className="flex gap-2 justify-end mt-5">
             <Button variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Button>
-            <Button onClick={() => { void createUser(); }} disabled={!form.email.trim() || form.password.length < 6}>Guardar</Button>
+            <Button onClick={() => { void createUser(); }} disabled={!form.email.trim() || form.password.length < 8}>Guardar</Button>
           </div>
         </Modal>
       )}
@@ -2372,17 +2475,36 @@ export default function App() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [stats, setStats] = useState<DashboardStats>(emptyStats);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [sessionRole, setSessionRole] = useState<UserRole>("owner");
   const [authReady, setAuthReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("promethixia-nav-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("promethixia-nav-collapsed", navCollapsed ? "1" : "0");
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [navCollapsed]);
 
   useEffect(() => {
     restoreSession()
-      .then((session) => setSessionEmail(session?.user.email ?? null))
+      .then((session) => {
+        setSessionEmail(session?.user.email ?? null);
+        setSessionRole(session?.user.role ?? "owner");
+      })
       .finally(() => setAuthReady(true));
   }, []);
 
   useEffect(() => {
-    if (!sessionEmail) return;
+    if (!sessionEmail || sessionRole === "admin") return;
     Promise.all([
       api<Product[]>("/products"),
       api<Client[]>("/clients"),
@@ -2398,10 +2520,10 @@ export default function App() {
       setCategories(nextCategories);
       setMovements(nextMovements);
     }).catch(() => undefined);
-  }, [sessionEmail]);
+  }, [sessionEmail, sessionRole]);
 
   useEffect(() => {
-    if (!sessionEmail || module !== "dashboard") return;
+    if (!sessionEmail || sessionRole === "admin" || module !== "dashboard") return;
     api<DashboardStats>("/dashboard").then(setStats).catch(() => undefined);
   }, [sessionEmail, module]);
 
@@ -2414,23 +2536,40 @@ export default function App() {
   }
 
   if (!sessionEmail) {
-    return <LoginScreen onSuccess={setSessionEmail} />;
+    return (
+      <LoginScreen
+        onSuccess={(email, role) => {
+          setSessionEmail(email);
+          setSessionRole(role);
+          setModule(role === "admin" ? "usuarios" : "dashboard");
+        }}
+      />
+    );
   }
 
-  const moduleLabel = navItems.find(item => item.id === module)?.label ?? "Promethixia";
+  const allowedModules = modulesForRole(sessionRole);
+  const visibleNav = navItems.filter(item => allowedModules.includes(item.id));
+  const activeModule = visibleNav.some(item => item.id === module) ? module : (visibleNav[0]?.id ?? "dashboard");
+  const moduleLabel = visibleNav.find(item => item.id === activeModule)?.label ?? "Promethixia";
 
   return (
-    <div className="flex min-h-dvh overflow-x-hidden font-body">
+    <div className="flex min-h-dvh font-body">
       <Sidebar
-        active={module}
+        active={activeModule}
         open={menuOpen}
+        collapsed={navCollapsed}
+        onToggle={() => setNavCollapsed(current => !current)}
+        items={visibleNav}
         onNav={(next) => {
           setModule(next);
           setMenuOpen(false);
         }}
         email={sessionEmail}
         onLogout={() => {
-          void signOut().then(() => setSessionEmail(null));
+          void signOut().then(() => {
+            setSessionEmail(null);
+            setSessionRole("owner");
+          });
         }}
       />
       {menuOpen && (
@@ -2441,55 +2580,55 @@ export default function App() {
           onClick={() => setMenuOpen(false)}
         />
       )}
-      <main className="app-canvas relative min-w-0 flex-1 overflow-auto">
-        <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur lg:hidden">
+      <main className="app-canvas relative min-w-0 flex-1">
+        <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-white/70 bg-white/75 px-4 py-3 backdrop-blur-xl lg:hidden">
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
             aria-label="Abrir menú"
-            className="grid size-10 place-items-center rounded-xl border border-slate-200 bg-white text-lg text-navy-900"
+            className="grid size-10 place-items-center rounded-2xl border border-brand-100 bg-white text-navy-900 shadow-sm"
           >
-            ☰
+            <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
           <div className="min-w-0">
             <p className="truncate font-display text-sm font-bold text-navy-900">{moduleLabel}</p>
             <p className="truncate text-xs text-slate-500">{sessionEmail}</p>
           </div>
         </div>
-        <div key={module} className="animate-rise">
-        {module === "dashboard" && <Dashboard stats={stats} />}
-        {module === "productos" && (
+        <div key={activeModule} className="animate-rise">
+        {activeModule === "dashboard" && <Dashboard stats={stats} />}
+        {activeModule === "productos" && (
           <Productos
             products={products} setProducts={setProducts}
             categories={categories} setCategories={setCategories}
             movements={movements} setMovements={setMovements}
           />
         )}
-        {module === "inventario" && (
+        {activeModule === "inventario" && (
           <Inventario
             products={products} setProducts={setProducts}
             movements={movements} setMovements={setMovements}
           />
         )}
-        {module === "clientes" && <Clientes clients={clients} setClients={setClients} />}
-        {module === "proveedores" && (
+        {activeModule === "clientes" && <Clientes clients={clients} setClients={setClients} />}
+        {activeModule === "proveedores" && (
           <Proveedores
             suppliers={suppliers} setSuppliers={setSuppliers}
             products={products} setProducts={setProducts}
             movements={movements} setMovements={setMovements}
           />
         )}
-        {module === "ventas" && (
+        {activeModule === "ventas" && (
           <Ventas
             products={products} setProducts={setProducts}
             clients={clients} setClients={setClients}
             movements={movements} setMovements={setMovements}
           />
         )}
-        {module === "cierre" && <CierreCaja />}
-        {module === "creditos" && <Creditos />}
-        {module === "integraciones" && <Integraciones />}
-        {module === "usuarios" && <Usuarios />}
+        {activeModule === "cierre" && <CierreCaja />}
+        {activeModule === "creditos" && <Creditos />}
+        {activeModule === "integraciones" && <Integraciones />}
+        {activeModule === "usuarios" && <Usuarios role={sessionRole} />}
         </div>
       </main>
     </div>

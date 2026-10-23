@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { BRAND_NAME, DEMO_MAILTO, LANDING_URL, signIn } from "../lib/auth";
+import { BRAND_NAME, DEMO_MAILTO, LANDING_URL, signIn, type UserRole } from "../lib/auth";
 
 function Logo({ tone = "dark", size = 36, textSize = "1.2rem" }: { tone?: "dark" | "light"; size?: number; textSize?: string }) {
   return (
@@ -25,7 +25,7 @@ function Logo({ tone = "dark", size = 36, textSize = "1.2rem" }: { tone?: "dark"
   );
 }
 
-export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void }) {
+export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: UserRole) => void }) {
   const year = new Date().getFullYear();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,18 +48,19 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
     const result = await signIn(email.trim(), password, remember);
     setLoading(false);
 
-    if (result.error || !result.email) {
+    if (result.error || !result.email || !result.role) {
       setMessage({ type: "error", text: result.error ?? "No pudimos iniciar sesión. Intenta de nuevo." });
       return;
     }
 
-    onSuccess(result.email);
+    onSuccess(result.email, result.role);
   }
 
   return (
     <div className="grid min-h-dvh animate-fade font-body lg:grid-cols-[1fr_1.05fr]">
       <aside className="mesh-navy relative hidden overflow-hidden p-10 text-white lg:flex lg:flex-col">
-        <div className="pointer-events-none absolute -bottom-24 -right-24 size-96 rounded-full bg-brand-500/25 blur-3xl" aria-hidden="true" />
+        <span className="aurora-orb -bottom-16 -right-10 size-80 bg-cyan-400/35" />
+        <span className="aurora-orb top-10 left-8 size-52 bg-brand-400/40" style={{ animationDelay: "1.2s" }} />
         {LANDING_URL ? (
           <a className="relative w-fit" href={LANDING_URL} aria-label={`${BRAND_NAME} - Inicio`}>
             <Logo tone="light" size={40} textSize="1.3rem" />
@@ -71,12 +72,13 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
         )}
 
         <div className="relative my-auto max-w-[30rem] animate-rise">
-          <h2 className="font-display text-[clamp(1.8rem,2.8vw,2.4rem)] font-bold leading-tight">
+          <p className="mb-4 text-[0.72rem] font-extrabold uppercase tracking-[0.28em] text-cyan-300">POS inteligente</p>
+          <h2 className="font-display text-[clamp(1.8rem,2.8vw,2.55rem)] font-bold leading-tight">
             Tu negocio, claro y bajo control.
           </h2>
           <p className="mt-4 text-white/70">Ventas, inventario, clientes y facturación en un solo lugar, con IA que te ayuda a decidir.</p>
-          <div className="mt-8 rounded-2xl border border-white/15 bg-white/5 p-5 backdrop-blur-xl" aria-hidden="true">
-            <span className="text-[0.72rem] font-bold uppercase tracking-wide text-brand-200">Asistente IA</span>
+          <div className="mt-8 rounded-3xl border border-white/15 bg-white/8 p-5 shadow-[0_20px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl" aria-hidden="true">
+            <span className="text-[0.72rem] font-bold uppercase tracking-wide text-cyan-200">Asistente IA</span>
             <p className="mt-2 text-[0.95rem] text-blue-50">Las ventas aumentaron un 14% esta semana. Te recomiendo reponer arroz y gaseosas.</p>
           </div>
         </div>
@@ -84,13 +86,13 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
         <p className="relative text-[0.8rem] text-white/50">© {year} {BRAND_NAME}</p>
       </aside>
 
-      <main className="flex flex-col bg-white px-4 py-6 sm:px-10">
+      <main className="app-canvas relative flex flex-col px-4 py-6 sm:px-10">
         <div className="flex items-center justify-between">
           <span className="lg:invisible">
             <Logo size={34} textSize="1.1rem" />
           </span>
           {LANDING_URL ? (
-            <a className="text-[0.9rem] font-semibold text-[#5b6b7f] transition hover:text-navy-900" href={LANDING_URL}>
+            <a className="text-[0.9rem] font-semibold text-slate-500 transition hover:text-navy-900" href={LANDING_URL}>
               ← Volver al inicio
             </a>
           ) : (
@@ -98,7 +100,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
           )}
         </div>
 
-        <div className="mx-auto my-auto w-full max-w-[400px] animate-rise py-10">
+        <div className="glass-panel mx-auto my-auto w-full max-w-[420px] animate-rise rounded-[1.75rem] p-7 sm:p-8">
           <img
             src="/brand/promethixia-mark.svg"
             alt=""
@@ -107,7 +109,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
             className="mb-6 drop-shadow-[0_10px_24px_rgba(27,110,243,0.35)]"
           />
           <h1 className="font-display text-[1.9rem] font-bold text-navy-900">Iniciar sesión</h1>
-          <p className="mt-2 text-[#5b6b7f]">Ingresa con la cuenta de tu negocio.</p>
+          <p className="mt-2 text-slate-500">Ingresa con la cuenta de tu negocio.</p>
 
           <form className="mt-8 grid gap-5" onSubmit={submit} noValidate>
             <div>
@@ -124,8 +126,8 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
                 onBlur={() => setTouched((current) => ({ ...current, email: true }))}
                 aria-invalid={emailInvalid}
                 aria-describedby="email-error"
-                className={`min-h-12 w-full rounded-xl border bg-white px-3.5 text-navy-900 outline-none ring-brand-500/25 transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 ${
-                  emailInvalid ? "border-rose-400" : "border-slate-300"
+                className={`min-h-12 w-full rounded-2xl border bg-white px-3.5 text-navy-900 outline-none ring-brand-500/25 transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 ${
+                  emailInvalid ? "border-rose-400" : "border-slate-200"
                 }`}
               />
               {emailInvalid && (
@@ -155,13 +157,13 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
                   onBlur={() => setTouched((current) => ({ ...current, password: true }))}
                   aria-invalid={passwordInvalid}
                   aria-describedby="password-error"
-                  className={`min-h-12 w-full rounded-xl border bg-white px-3.5 pr-20 text-navy-900 outline-none ring-brand-500/25 transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 ${
-                    passwordInvalid ? "border-rose-400" : "border-slate-300"
+                  className={`min-h-12 w-full rounded-2xl border bg-white px-3.5 pr-20 text-navy-900 outline-none ring-brand-500/25 transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 ${
+                    passwordInvalid ? "border-rose-400" : "border-slate-200"
                   }`}
                 />
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2.5 py-1.5 text-[0.8rem] font-bold text-[#5b6b7f] hover:bg-slate-100 hover:text-navy-900"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl px-2.5 py-1.5 text-[0.8rem] font-bold text-slate-500 hover:bg-slate-100 hover:text-navy-900"
                   aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   onClick={() => setShowPassword((current) => !current)}
                 >
@@ -175,7 +177,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
               )}
             </div>
 
-            <label className="inline-flex w-fit cursor-pointer items-center gap-2.5 text-[0.9rem] text-[#5b6b7f]">
+            <label className="inline-flex w-fit cursor-pointer items-center gap-2.5 text-[0.9rem] text-slate-500">
               <input
                 type="checkbox"
                 checked={remember}
@@ -188,7 +190,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
             <button
               type="submit"
               disabled={loading}
-              className="min-h-[50px] rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 font-extrabold text-white shadow-brand transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-70"
+              className="min-h-[50px] rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-700 font-extrabold text-white shadow-brand transition hover:-translate-y-0.5 hover:brightness-110 disabled:translate-y-0 disabled:opacity-70"
             >
               {loading ? "Ingresando…" : "Ingresar"}
             </button>
@@ -205,7 +207,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string) => void 
             )}
           </form>
 
-          <p className="mt-8 text-center text-[0.9rem] text-[#5b6b7f]">
+          <p className="mt-8 text-center text-[0.9rem] text-slate-500">
             ¿Aún no eres cliente?{" "}
             <a className="font-bold text-brand-600 hover:underline" href={DEMO_MAILTO}>
               Solicita una demostración
