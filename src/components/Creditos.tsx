@@ -105,7 +105,7 @@ export function Creditos() {
               type="button"
               onClick={() => setFilter(id)}
               className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${
-                filter === id ? "bg-navy-900 text-white" : "text-slate-600"
+                filter === id ? "bg-navy-900 text-white" : "bg-transparent text-slate-700 hover:bg-slate-200 hover:text-navy-900"
               }`}
             >
               {label}

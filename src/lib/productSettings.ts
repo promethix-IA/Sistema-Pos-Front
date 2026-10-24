@@ -5,13 +5,22 @@ export type ProductSaleSettings = {
   tracksInventory: boolean;
 };
 
-const STORAGE_KEY = "pos.productSaleSettings";
+let settingsOwner = "";
 
 type SettingsMap = Record<string, ProductSaleSettings>;
 
+function storageKey(): string {
+  const owner = settingsOwner.trim().toLowerCase();
+  return owner ? `pos.productSaleSettings:${owner}` : "pos.productSaleSettings";
+}
+
+export function bindProductSettings(email: string) {
+  settingsOwner = email.trim().toLowerCase();
+}
+
 function readAll(): SettingsMap {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey());
     if (!raw) return {};
     const parsed = JSON.parse(raw) as SettingsMap;
     return parsed && typeof parsed === "object" ? parsed : {};
@@ -21,12 +30,13 @@ function readAll(): SettingsMap {
 }
 
 export function saveProductSaleSettings(code: string, settings: ProductSaleSettings) {
+  if (!settingsOwner) return;
   const all = readAll();
   all[code] = {
     saleMode: settings.saleMode,
     tracksInventory: settings.saleMode === "unidad" ? true : settings.tracksInventory,
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  localStorage.setItem(storageKey(), JSON.stringify(all));
 }
 
 export function getProductSaleSettings(code: string): ProductSaleSettings | null {

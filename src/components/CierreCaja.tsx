@@ -165,7 +165,7 @@ export function CierreCaja() {
           <button
             type="button"
             onClick={() => { void openShift(); }}
-            className="mt-4 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-700 px-4 py-2.5 text-sm font-bold text-white shadow-brand"
+            className="mt-4 rounded-2xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-700 hover:text-white active:bg-brand-700"
           >
             Abrir turno
           </button>
@@ -194,7 +194,7 @@ export function CierreCaja() {
               <button
                 type="button"
                 onClick={() => { void closeShift(); }}
-                className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white"
+                className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 hover:text-white active:bg-rose-700"
               >
                 Cerrar turno
               </button>

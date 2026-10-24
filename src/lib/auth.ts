@@ -44,12 +44,11 @@ export function modulesForRole(role: UserRole): readonly string[] {
 }
 
 export function roleLabel(role: UserRole | string | undefined): string {
-  if (role === "admin") return "Admin";
-  if (role === "owner") return "Padre";
-  if (role === "administrador") return "Administrador";
+  if (role === "admin") return "Plataforma";
+  if (role === "owner" || role === "administrador") return "Administrador";
   if (role === "inventario") return "Inventario";
   if (role === "cajero" || role === "cashier") return "Cajero";
-  return "Padre";
+  return "Administrador";
 }
 
 export interface SignInResult {

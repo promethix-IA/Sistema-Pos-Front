@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { BRAND_NAME, DEMO_MAILTO, LANDING_URL, signIn, type UserRole } from "../lib/auth";
+import { ThemeToggle } from "./ThemeToggle";
 
 function Logo({ tone = "dark", size = 36, textSize = "1.2rem" }: { tone?: "dark" | "light"; size?: number; textSize?: string }) {
   return (
@@ -87,17 +88,23 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
       </aside>
 
       <main className="app-canvas relative flex flex-col px-4 py-6 sm:px-10">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <span className="lg:invisible">
             <Logo size={34} textSize="1.1rem" />
           </span>
-          {LANDING_URL ? (
-            <a className="text-[0.9rem] font-semibold text-slate-500 transition hover:text-navy-900" href={LANDING_URL}>
-              ← Volver al inicio
-            </a>
-          ) : (
-            <span />
-          )}
+          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+            <span className="sm:hidden">
+              <ThemeToggle compact />
+            </span>
+            <span className="hidden sm:inline-flex">
+              <ThemeToggle />
+            </span>
+            {LANDING_URL ? (
+              <a className="text-[0.9rem] font-semibold text-slate-500 transition hover:text-navy-900" href={LANDING_URL}>
+                ← Volver al inicio
+              </a>
+            ) : null}
+          </div>
         </div>
 
         <div className="glass-panel mx-auto my-auto w-full max-w-[420px] animate-rise rounded-[1.75rem] p-7 sm:p-8">
@@ -190,7 +197,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
             <button
               type="submit"
               disabled={loading}
-              className="min-h-[50px] rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-700 font-extrabold text-white shadow-brand transition hover:-translate-y-0.5 hover:brightness-110 disabled:translate-y-0 disabled:opacity-70"
+              className="min-h-[50px] appearance-none rounded-2xl bg-brand-600 font-extrabold text-white shadow-brand transition-colors hover:bg-brand-700 hover:text-white active:bg-brand-700 active:text-white disabled:opacity-70"
             >
               {loading ? "Ingresando…" : "Ingresar"}
             </button>
