@@ -206,14 +206,19 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
               )}
             </div>
 
-            <label className="inline-flex w-fit cursor-pointer items-center gap-2.5 text-[0.9rem] text-slate-500">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(event) => setRemember(event.target.checked)}
-                className="size-4 accent-brand-600"
-              />
-              Mantener sesión iniciada
+            <label className="flex max-w-[22rem] cursor-pointer flex-col gap-1 text-[0.9rem] text-slate-500">
+              <span className="inline-flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(event) => setRemember(event.target.checked)}
+                  className="size-4 accent-brand-600"
+                />
+                Sesión larga en esta pestaña
+              </span>
+              <span className="pl-7 text-[0.78rem] text-slate-400">
+                F5 no te saca. Si cierras la pestaña o el navegador, vuelve al login.
+              </span>
             </label>
 
             <button

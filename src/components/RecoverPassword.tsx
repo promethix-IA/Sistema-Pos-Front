@@ -40,7 +40,7 @@ export function RecoverPassword({
     }
     setMessage({
       type: "success",
-      text: "Si el correo está registrado, te enviamos un código de 6 dígitos. Revisa la bandeja y el spam.",
+      text: `Te enviamos un código de 6 dígitos a ${email.trim()}. Revísalo e escríbelo aquí.`,
     });
     setResendIn(60);
     return true;
@@ -73,12 +73,12 @@ export function RecoverPassword({
     const error = await verifyPasswordReset(email.trim(), code);
     setLoading(false);
     if (error) {
-      setMessage({ type: "error", text: error });
+      setMessage({ type: "error", text: error || "El código no coincide con el del correo." });
       return;
     }
     setPassword("");
     setConfirm("");
-    setMessage(null);
+    setMessage({ type: "success", text: "El código coincide. Ahora puedes cambiar la contraseña." });
     setStep("password");
   }
 
@@ -115,13 +115,20 @@ export function RecoverPassword({
     step === "email" ? "Recuperar contraseña" : step === "code" ? "Código de verificación" : "Nueva contraseña";
   const subtitle =
     step === "email"
-      ? "Escribe el correo de tu cuenta y te enviamos un código."
+      ? "Escribe el correo de tu cuenta. Te enviamos un código al momento."
       : step === "code"
-        ? `Ingresa el código que enviamos a ${email.trim()}.`
-        : "El código es correcto. Elige una contraseña nueva.";
+        ? `Escribe el código que llegó a ${email.trim()}. Si no coincide, no podrás cambiar la contraseña.`
+        : "El código coincidió. Elige una contraseña nueva.";
 
   return (
     <>
+      <ol className="mb-6 flex gap-2 text-[0.72rem] font-extrabold uppercase tracking-wide text-slate-400">
+        <li className={step === "email" ? "text-brand-600" : "text-slate-400"}>1. Correo</li>
+        <li aria-hidden="true">·</li>
+        <li className={step === "code" ? "text-brand-600" : "text-slate-400"}>2. Código</li>
+        <li aria-hidden="true">·</li>
+        <li className={step === "password" ? "text-brand-600" : "text-slate-400"}>3. Contraseña</li>
+      </ol>
       <h1 className="font-display text-[1.9rem] font-bold text-navy-900">{title}</h1>
       <p className="mt-2 text-slate-500">{subtitle}</p>
 
@@ -148,6 +155,9 @@ export function RecoverPassword({
           >
             {loading ? "Enviando…" : "Enviar código"}
           </button>
+          <p className="text-[0.82rem] leading-5 text-slate-500">
+            El código sale de <span className="font-semibold text-navy-900">promethixia@gmail.com</span>. Si no se envía, en el back falta una contraseña de aplicación de Gmail (16 letras), no la contraseña de la cuenta.
+          </p>
         </form>
       )}
 

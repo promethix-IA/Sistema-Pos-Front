@@ -1,9 +1,10 @@
-import { clearSession, getAccessToken } from "./auth";
+import { authFetchInit, authHeaders, clearSession, signOut } from "./auth";
 import { API_URL } from "./config";
 
 export class ApiError extends Error {}
 
 function expireSession(): void {
+  void signOut();
   clearSession();
   if (window.location.hash || window.location.search || window.location.pathname !== "/") {
     window.location.assign("/");
@@ -13,14 +14,14 @@ function expireSession(): void {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = getAccessToken();
-  const headers = new Headers(init.headers);
-  if (!headers.has("Accept")) headers.set("Accept", "application/json");
-  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const headers = authHeaders(init.headers);
+  if (!headers.has("Content-Type") && init.body != null) {
+    headers.set("Content-Type", "application/json");
+  }
 
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
+    ...authFetchInit,
     headers,
   });
   if (response.status === 401) {

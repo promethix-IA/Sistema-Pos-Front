@@ -36,6 +36,7 @@ interface DaySaleItem {
   weight: number | null;
   unitPrice: number;
   lineTotal: number;
+  imei?: string;
 }
 
 interface DaySale {
@@ -118,6 +119,9 @@ interface SaleTicket {
 interface TicketTemplate {
   storeName: string;
   nitLine: string;
+  phone: string;
+  address: string;
+  city: string;
   footer: string;
   showDate: boolean;
   showClient: boolean;
@@ -137,6 +141,9 @@ interface IntegrationsState {
 const DEFAULT_TICKET: TicketTemplate = {
   storeName: "Mi negocio",
   nitLine: "",
+  phone: "",
+  address: "",
+  city: "",
   footer: "¡Gracias por su compra!",
   showDate: true,
   showClient: true,
@@ -216,6 +223,32 @@ const paymentLabel: Record<PaymentMethod, string> = {
   mixto: "Mixto",
 };
 
+function categoryRequiresImei(category: string) {
+  const name = category
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return ["celular", "telefono", "smartphone", "movil"].some(hint => name.includes(hint));
+}
+
+function productRequiresImei(product: { category?: string; name?: string }) {
+  return categoryRequiresImei(`${product.category ?? ""} ${product.name ?? ""}`);
+}
+
+function imeiDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function isValidImei(value: string) {
+  const digits = imeiDigits(value);
+  return digits.length >= 14 && digits.length <= 16;
+}
+
+function phoneUnits(qty: number) {
+  return Math.max(1, Math.round(qty));
+}
+
 function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]) {
   const esc = (v: string | number) => {
     const s = String(v);
@@ -267,7 +300,7 @@ function openCashDrawer() {
 
 type SaleReceipt = {
   code: string;
-  items: { name: string; qty: number; weight?: number; lineTotal: number }[];
+  items: { name: string; qty: number; weight?: number; unitPrice?: number; lineTotal: number; imei?: string }[];
   total: number;
   paid: number;
   change: number;
@@ -283,7 +316,9 @@ function daySaleToReceipt(sale: DaySale): SaleReceipt {
     name: item.productName,
     qty: item.qty,
     weight: item.weight ?? undefined,
+    unitPrice: item.unitPrice,
     lineTotal: item.lineTotal,
+    imei: item.imei || undefined,
   }));
   const total = items.reduce((sum, item) => sum + item.lineTotal, 0);
   return {
@@ -314,16 +349,27 @@ function printSaleTicket(sale: SaleReceipt) {
   const tpl = readTicketTemplate();
   const rows = sale.items
     .map(i => {
-      const qty = i.weight != null ? `${i.qty}kg` : `x${i.qty}`;
-      return `<tr><td>${escapeHtml(i.name)}<br/><span style="color:#555">${qty}</span></td><td style="text-align:right">${fmt(i.lineTotal)}</td></tr>`;
+      const qtyLabel = i.weight != null ? `${i.qty} kg` : String(i.qty);
+      const unit = i.unitPrice ?? (i.qty ? i.lineTotal / i.qty : i.lineTotal);
+      const imei = i.imei ? `<div class="meta">IMEI ${escapeHtml(i.imei)}</div>` : "";
+      return `<tr>
+        <td class="qty">${escapeHtml(qtyLabel)}</td>
+        <td>${escapeHtml(i.name)}<div class="meta">${fmt(unit)} c/u</div>${imei}</td>
+        <td class="r">${fmt(i.lineTotal)}</td>
+      </tr>`;
     })
     .join("");
   const when = sale.soldAt
     ? new Date(sale.soldAt).toLocaleString("es-CO")
     : new Date().toLocaleString("es-CO");
   const paymentText = paymentLabel[sale.payment as PaymentMethod] ?? String(sale.payment);
-  const extra = (tpl.extraHeader || "")
-    .split(/\r?\n/)
+  const headerLines = [
+    tpl.nitLine,
+    tpl.phone ? (/^(cel|tel|whats)/i.test(tpl.phone.trim()) ? tpl.phone : `Tel. ${tpl.phone}`) : "",
+    tpl.address,
+    tpl.city,
+    ...(tpl.extraHeader || "").split(/\r?\n/),
+  ]
     .map(line => line.trim())
     .filter(Boolean)
     .map(line => `<p>${escapeHtml(line)}</p>`)
@@ -340,28 +386,37 @@ function printSaleTicket(sale: SaleReceipt) {
       }
       body{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .ticket{width:72mm;max-width:100%;margin:0;padding:8px}
-      h1{font-size:14px;text-align:center;margin:0 0 4px}
+      h1{font-size:15px;text-align:center;margin:0 0 2px;text-transform:uppercase}
+      .doc{font-size:11px;font-weight:700;letter-spacing:.04em;margin:6px 0 2px}
       p{margin:2px 0;text-align:center}
-      table{width:100%;border-collapse:collapse;margin-top:8px}
-      td{padding:4px 0;vertical-align:top}
+      table{width:100%;border-collapse:collapse;margin-top:6px}
+      td{padding:3px 0;vertical-align:top}
+      td.qty{width:14%;padding-right:4px}
+      td.r{text-align:right;white-space:nowrap}
+      th{font-size:10px;text-align:left;border-bottom:1px dashed #000;padding:0 0 4px;font-weight:700}
+      th.r{text-align:right}
+      .meta{color:#333;font-size:10px}
       .line{border-top:1px dashed #000;margin:8px 0}
       .tot{font-weight:700;font-size:13px}
     </style></head><body>
     <div class="ticket">
     <h1>${escapeHtml(tpl.storeName)}</h1>
-    ${tpl.nitLine ? `<p>${escapeHtml(tpl.nitLine)}</p>` : ""}
-    ${extra}
-    <p>Ticket #${escapeHtml(sale.code)}</p>
+    ${headerLines}
+    <p class="doc">FACTURA DE VENTA</p>
+    <p>No. ${escapeHtml(sale.code)}</p>
     ${sale.reprint && tpl.showReprint ? "<p><strong>REIMPRESIÓN</strong></p>" : ""}
     ${tpl.showDate ? `<p>${escapeHtml(when)}</p>` : ""}
     ${tpl.showClient && sale.clientName ? `<p>Cliente: ${escapeHtml(sale.clientName)}</p>` : ""}
     <div class="line"></div>
-    <table>${rows}</table>
+    <table>
+      <tr><th>Cant</th><th>Producto</th><th class="r">Total</th></tr>
+      ${rows}
+    </table>
     <div class="line"></div>
     <table>
-      <tr class="tot"><td>TOTAL</td><td style="text-align:right">${fmt(sale.total)}</td></tr>
-      ${tpl.showPayment ? `<tr><td>Pago (${escapeHtml(paymentText)})</td><td style="text-align:right">${fmt(sale.paid)}</td></tr>` : ""}
-      ${tpl.showChange ? `<tr><td>Cambio</td><td style="text-align:right">${fmt(sale.change)}</td></tr>` : ""}
+      <tr class="tot"><td>TOTAL</td><td class="r">${fmt(sale.total)}</td></tr>
+      ${tpl.showPayment ? `<tr><td>Pago (${escapeHtml(paymentText)})</td><td class="r">${fmt(sale.paid)}</td></tr>` : ""}
+      ${tpl.showChange ? `<tr><td>Cambio</td><td class="r">${fmt(sale.change)}</td></tr>` : ""}
     </table>
     <div class="line"></div>
     ${tpl.footer ? `<p>${escapeHtml(tpl.footer)}</p>` : ""}
@@ -1400,6 +1455,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
   const [search, setSearch] = useState("");
   const [weight, setWeight] = useState("");
   const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutImeis, setCheckoutImeis] = useState<Record<number, string[]>>({});
   const [amountPaid, setAmountPaid] = useState("");
   const [lastSale, setLastSale] = useState<SaleReceipt | null>(null);
   const [saleError, setSaleError] = useState("");
@@ -1488,7 +1544,15 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
   const change = payment === "efectivo" && Number.isFinite(paidNum) ? Math.max(0, paidNum - total) : 0;
   const mixOk = payment !== "mixto" || Math.abs(mixTotal - total) < 0.01;
   const mixCash = Number(mixAmounts.efectivo) || 0;
-  const canConfirm =
+  const phoneCartItems = cart.filter(
+    item => productRequiresImei(item.product) && item.product.saleMode !== "granel",
+  );
+  const imeiOk = phoneCartItems.every(item => {
+    const units = phoneUnits(item.qty);
+    const list = checkoutImeis[item.product.id] ?? [];
+    return list.length >= units && list.slice(0, units).every(isValidImei);
+  });
+  const cashReady =
     !!payment &&
     cart.length > 0 &&
     shiftOpen === true &&
@@ -1499,6 +1563,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
       : payment === "mixto"
         ? mixCash === 0 || (Number.isFinite(paidNum) && paidNum >= mixCash && amountPaid !== "")
         : true);
+  const canConfirm = cashReady && imeiOk;
 
   const openCheckout = () => {
     if (!payment || cart.length === 0) return;
@@ -1514,6 +1579,14 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
     if (payment === "efectivo") setAmountPaid("");
     else if (payment === "mixto") setAmountPaid(String(Number(mixAmounts.efectivo) || total));
     else setAmountPaid(String(total));
+    const nextImeis: Record<number, string[]> = {};
+    for (const item of cart) {
+      if (!productRequiresImei(item.product) || item.product.saleMode === "granel") continue;
+      const units = phoneUnits(item.qty);
+      const prev = checkoutImeis[item.product.id] ?? [];
+      nextImeis[item.product.id] = Array.from({ length: units }, (_, index) => prev[index] ?? "");
+    }
+    setCheckoutImeis(nextImeis);
     setShowCheckout(true);
   };
 
@@ -1636,6 +1709,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
             productId: item.product.id,
             qty: item.qty,
             weight: item.product.saleMode === "granel" ? item.qty : null,
+            imei: productRequiresImei(item.product)
+              ? (checkoutImeis[item.product.id] ?? []).map(imeiDigits).filter(Boolean).join(" / ")
+              : "",
           })),
         }),
       });
@@ -1647,7 +1723,11 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
           name: i.product.name,
           qty: i.qty,
           weight: i.weight,
+          unitPrice: i.product.sellPrice,
           lineTotal: i.product.sellPrice * i.qty,
+          imei: productRequiresImei(i.product)
+            ? (checkoutImeis[i.product.id] ?? []).map(imeiDigits).filter(Boolean).join(" / ")
+            : undefined,
         })),
         total,
         paid: paidNum,
@@ -1662,6 +1742,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
       setClients(await api<Client[]>("/clients"));
       setMovements(await api<InventoryMovement[]>("/inventory/movements"));
       setShowCheckout(false);
+      setCheckoutImeis({});
       setAmountPaid("");
       setLastSale(sale);
       closeTicket(active.id);
@@ -1677,6 +1758,15 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         <h2 className="text-xl font-bold text-slate-800 mb-1">Venta confirmada</h2>
         <p className="text-slate-500 text-sm mb-4">Ticket #{lastSale.code}</p>
         <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-600 mb-3 space-y-1.5 text-left">
+          {lastSale.items.map((item, index) => (
+            <div key={`${item.name}-${index}`} className="border-b border-slate-100 pb-1.5 last:border-0">
+              <div className="flex justify-between gap-3">
+                <span>{item.qty} × {item.name}</span>
+                <span className="font-semibold">{fmt(item.lineTotal)}</span>
+              </div>
+              {item.imei ? <p className="text-xs text-slate-500">IMEI {item.imei}</p> : null}
+            </div>
+          ))}
           <div className="flex justify-between"><span>Total</span><span className="font-semibold">{fmt(lastSale.total)}</span></div>
           <div className="flex justify-between"><span>Pagó</span><span>{fmt(lastSale.paid)}</span></div>
           <div className="flex justify-between text-emerald-700 font-bold"><span>Cambio</span><span>{fmt(lastSale.change)}</span></div>
@@ -1941,6 +2031,55 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
               </div>
             </div>
 
+            {phoneCartItems.length > 0 && (
+              <div className="space-y-3">
+                {phoneCartItems.map((item, itemIndex) => {
+                  const units = phoneUnits(item.qty);
+                  const list = checkoutImeis[item.product.id] ?? Array.from({ length: units }, () => "");
+                  return (
+                    <div key={item.product.id} className="space-y-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{item.product.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {units > 1
+                            ? `IMEI de cada unidad vendida (${units})`
+                            : "IMEI del celular vendido"}
+                        </p>
+                      </div>
+                      {list.slice(0, units).map((value, index) => {
+                        const digits = imeiDigits(value);
+                        const invalid = value.trim() !== "" && !isValidImei(value);
+                        return (
+                          <div key={index}>
+                            <Input
+                              label={units > 1 ? `IMEI ${index + 1}` : "IMEI"}
+                              value={value}
+                              inputMode="numeric"
+                              autoComplete="off"
+                              maxLength={18}
+                              placeholder="15 dígitos"
+                              autoFocus={itemIndex === 0 && index === 0}
+                              onChange={e => {
+                                const next = [...(checkoutImeis[item.product.id] ?? list)];
+                                next[index] = e.target.value;
+                                setCheckoutImeis(prev => ({ ...prev, [item.product.id]: next }));
+                              }}
+                            />
+                            {invalid && (
+                              <p className="mt-1 text-xs text-red-600">El IMEI debe tener entre 14 y 16 dígitos.</p>
+                            )}
+                            {!invalid && digits.length > 0 && digits.length < 14 && (
+                              <p className="mt-1 text-xs text-slate-400">{digits.length} / 15 dígitos</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {(payment === "efectivo" || payment === "mixto") && (
               <Input
                 label={payment === "mixto" ? "¿Con cuánto paga en efectivo? (COP)" : "¿Con cuánto paga? (COP)"}
@@ -1950,16 +2089,16 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
                 value={amountPaid}
                 onChange={e => setAmountPaid(e.target.value)}
                 placeholder={String(payment === "mixto" ? (Number(mixAmounts.efectivo) || 0) : total)}
-                autoFocus
+                autoFocus={phoneCartItems.length === 0}
               />
             )}
 
             {payment === "efectivo" && (
               <div className={`rounded-xl px-4 py-3 flex justify-between items-center ${
-                canConfirm ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
+                cashReady ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
               }`}>
                 <span className="text-sm font-medium">Cambio</span>
-                <span className="text-xl font-bold">{canConfirm ? fmt(change) : "—"}</span>
+                <span className="text-xl font-bold">{cashReady ? fmt(change) : "—"}</span>
               </div>
             )}
 
@@ -1970,6 +2109,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
               <p className="text-xs text-amber-700">Esta venta quedará como crédito del cliente seleccionado.</p>
             )}
             {saleError && <p className="text-xs text-red-600">{saleError}</p>}
+            {phoneCartItems.length > 0 && !imeiOk && (
+              <p className="text-xs text-amber-700">Completa el IMEI del celular para confirmar la venta.</p>
+            )}
 
             <p className="text-xs text-slate-400">
               Al confirmar se abrirá el cajón monedero cuando haya pago en efectivo.
@@ -2115,6 +2257,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
                                   {" · Activo "}{item.activeQty}
                                   {" · "}{fmt(item.lineTotal)}
                                 </p>
+                                {item.imei ? (
+                                  <p className="text-xs font-medium text-slate-600">IMEI {item.imei}</p>
+                                ) : null}
                               </div>
                               <Input
                                 label="Devolver"
@@ -2174,6 +2319,78 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
 
 const peripheralIcons: Record<string, string> = { barcode: "▥", scale: "⊖", printer: "⊟", drawer: "▣", dian: "◫" };
 
+function TicketFields({ ticket, setTicket }: { ticket: TicketTemplate; setTicket: (next: TicketTemplate) => void }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <Input
+        label="Nombre del local o empresa"
+        value={ticket.storeName}
+        onChange={e => setTicket({ ...ticket, storeName: e.target.value })}
+        placeholder="Ej. CELU CENTRO ACCESORIOS"
+      />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Input
+          label="NIT"
+          value={ticket.nitLine}
+          onChange={e => setTicket({ ...ticket, nitLine: e.target.value })}
+          placeholder="NIT 900.123.456-1"
+        />
+        <Input
+          label="Teléfono"
+          value={ticket.phone}
+          onChange={e => setTicket({ ...ticket, phone: e.target.value })}
+          placeholder="312 275 4222"
+        />
+        <Input
+          label="Dirección"
+          value={ticket.address}
+          onChange={e => setTicket({ ...ticket, address: e.target.value })}
+          placeholder="Calle 18 # 14-26"
+        />
+        <Input
+          label="Ciudad"
+          value={ticket.city}
+          onChange={e => setTicket({ ...ticket, city: e.target.value })}
+          placeholder="Armenia, Quindío"
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-semibold text-navy-900">Texto extra del encabezado</label>
+        <textarea
+          value={ticket.extraHeader}
+          onChange={e => setTicket({ ...ticket, extraHeader: e.target.value })}
+          rows={2}
+          placeholder="Resolución DIAN u otras líneas opcionales"
+          className="rounded-xl border border-slate-200 bg-[var(--surface)] px-3.5 py-2.5 text-sm text-navy-900 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15"
+        />
+      </div>
+      <Input
+        label="Pie de página"
+        value={ticket.footer}
+        onChange={e => setTicket({ ...ticket, footer: e.target.value })}
+      />
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {([
+          ["showDate", "Mostrar fecha/hora de la venta"],
+          ["showClient", "Mostrar cliente"],
+          ["showPayment", "Mostrar método de pago"],
+          ["showChange", "Mostrar cambio"],
+          ["showReprint", "Mostrar etiqueta REIMPRESIÓN"],
+        ] as const).map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={ticket[key]}
+              onChange={e => setTicket({ ...ticket, [key]: e.target.checked })}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Integraciones() {
   const [state, setState] = useState<IntegrationsState | null>(null);
   const [ticket, setTicket] = useState<TicketTemplate>(readTicketTemplate);
@@ -2231,9 +2448,12 @@ function Integraciones() {
     writeTicketTemplate(ticket);
     printSaleTicket({
       code: "VTA-000000",
-      items: [{ name: "Producto de ejemplo", qty: 1, lineTotal: 10000 }],
-      total: 10000,
-      paid: 10000,
+      items: [
+        { name: "Celular Samsung A07", qty: 1, unitPrice: 450000, lineTotal: 450000, imei: "351234567890123" },
+        { name: "Cable USB", qty: 1, unitPrice: 10000, lineTotal: 10000 },
+      ],
+      total: 460000,
+      paid: 460000,
       change: 0,
       payment: "efectivo",
       clientName: "Cliente de prueba",
@@ -2262,6 +2482,22 @@ function Integraciones() {
         }
       />
       {notice && <p className="-mt-2 text-sm font-semibold text-brand-700">{notice}</p>}
+
+      <Card className="p-5">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-bold text-slate-800 text-sm">Datos del local y factura</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Este nombre y estos datos salen en cada factura de venta: productos, precios e IMEI de celulares.
+            </p>
+          </div>
+        </div>
+        <TicketFields ticket={ticket} setTicket={setTicket} />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => { void saveTicket(); }}>Guardar datos del local</Button>
+          <Button variant="secondary" size="sm" onClick={previewTicket}>Vista previa de factura</Button>
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {peripherals.map(p => (
@@ -2327,58 +2563,12 @@ function Integraciones() {
       </Card>
 
       {showTicketModal && (
-        <Modal title="Campos del ticket de venta" onClose={() => setShowTicketModal(false)}>
-          <div className="flex flex-col gap-4">
-            <Input
-              label="Nombre del negocio"
-              value={ticket.storeName}
-              onChange={e => setTicket({ ...ticket, storeName: e.target.value })}
-              placeholder="Nombre de tu negocio"
-            />
-            <Input
-              label="Línea de NIT / ciudad"
-              value={ticket.nitLine}
-              onChange={e => setTicket({ ...ticket, nitLine: e.target.value })}
-              placeholder="NIT 900.123.456-1 · Cali"
-            />
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold text-navy-900">Texto extra del encabezado</label>
-              <textarea
-                value={ticket.extraHeader}
-                onChange={e => setTicket({ ...ticket, extraHeader: e.target.value })}
-                rows={3}
-                placeholder="Dirección, teléfono, resolución DIAN…"
-                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-navy-900 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15"
-              />
-            </div>
-            <Input
-              label="Pie de página"
-              value={ticket.footer}
-              onChange={e => setTicket({ ...ticket, footer: e.target.value })}
-            />
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {([
-                ["showDate", "Mostrar fecha/hora de la venta"],
-                ["showClient", "Mostrar cliente"],
-                ["showPayment", "Mostrar método de pago"],
-                ["showChange", "Mostrar cambio"],
-                ["showReprint", "Mostrar etiqueta REIMPRESIÓN"],
-              ] as const).map(([key, label]) => (
-                <label key={key} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={ticket[key]}
-                    onChange={e => setTicket({ ...ticket, [key]: e.target.checked })}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-slate-500">
-              La fecha de la esquina superior es del navegador. Al imprimir usamos márgenes en cero para ocultarla;
-              si sigue visible, desactiva “Encabezados y pies de página” en el diálogo de impresión.
-            </p>
-          </div>
+        <Modal title="Datos del local y factura" onClose={() => setShowTicketModal(false)}>
+          <TicketFields ticket={ticket} setTicket={setTicket} />
+          <p className="mt-4 text-xs text-slate-500">
+            La fecha de la esquina superior es del navegador. Al imprimir usamos márgenes en cero para ocultarla;
+            si sigue visible, desactiva “Encabezados y pies de página” en el diálogo de impresión.
+          </p>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <Button className="flex-1" onClick={() => { void saveTicket(); }}>Guardar plantilla</Button>
             <Button variant="secondary" className="flex-1" onClick={previewTicket}>Vista previa</Button>
