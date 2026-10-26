@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { BRAND_NAME, DEMO_MAILTO, LANDING_URL, signIn, type UserRole } from "../lib/auth";
+import { RecoverPassword } from "./RecoverPassword";
 import { ThemeToggle } from "./ThemeToggle";
 
 function Logo({ tone = "dark", size = 36, textSize = "1.2rem" }: { tone?: "dark" | "light"; size?: number; textSize?: string }) {
@@ -34,6 +35,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
   const [showPassword, setShowPassword] = useState(false);
   const [touched, setTouched] = useState({ email: false, password: false });
   const [loading, setLoading] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
 
   const emailInvalid = touched.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -115,6 +117,19 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
             height={56}
             className="mb-6 drop-shadow-[0_10px_24px_rgba(27,110,243,0.35)]"
           />
+          {recovering ? (
+            <RecoverPassword
+              initialEmail={email}
+              onCancel={() => setRecovering(false)}
+              onDone={(recoveredEmail) => {
+                setEmail(recoveredEmail);
+                setPassword("");
+                setRecovering(false);
+                setMessage({ type: "success", text: "La contraseña se actualizó. Ya puedes iniciar sesión." });
+              }}
+            />
+          ) : (
+            <>
           <h1 className="font-display text-[1.9rem] font-bold text-navy-900">Iniciar sesión</h1>
           <p className="mt-2 text-slate-500">Ingresa con la cuenta de tu negocio.</p>
 
@@ -149,9 +164,16 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
                 <label className="text-[0.9rem] font-bold text-navy-900" htmlFor="password">
                   Contraseña
                 </label>
-                <a className="text-[0.85rem] font-semibold text-brand-600 hover:underline" href="mailto:promethixia@gmail.com?subject=Recuperar%20contrase%C3%B1a">
+                <button
+                  type="button"
+                  className="text-[0.85rem] font-semibold text-brand-600 hover:underline"
+                  onClick={() => {
+                    setMessage(null);
+                    setRecovering(true);
+                  }}
+                >
                   ¿Olvidaste tu contraseña?
-                </a>
+                </button>
               </div>
               <div className="relative">
                 <input
@@ -220,6 +242,8 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
               Pide tu prueba gratis de 15 días
             </a>
           </p>
+            </>
+          )}
         </div>
       </main>
     </div>

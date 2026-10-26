@@ -140,6 +140,28 @@ async function readError(response: Response): Promise<string> {
   return "No pudimos completar la solicitud.";
 }
 
+async function postPassword(path: string, body: object): Promise<string | null> {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) return readError(response);
+  return null;
+}
+
+export async function requestPasswordReset(email: string): Promise<string | null> {
+  return postPassword("/users/password/forgot", { email });
+}
+
+export async function verifyPasswordReset(email: string, code: string): Promise<string | null> {
+  return postPassword("/users/password/verify", { email, code });
+}
+
+export async function resetPassword(email: string, code: string, password: string): Promise<string | null> {
+  return postPassword("/users/password/reset", { email, code, password });
+}
+
 export async function signIn(email: string, password: string, remember: boolean): Promise<SignInResult> {
   const response = await fetch(`${API_URL}/users/login`, {
     method: "POST",
