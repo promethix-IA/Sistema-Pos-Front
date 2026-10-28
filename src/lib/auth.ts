@@ -90,11 +90,14 @@ export function readCsrfToken(): string {
   }
 }
 
-export function authHeaders(init?: HeadersInit): Headers {
+export function authHeaders(init?: HeadersInit, method = "GET"): Headers {
   const headers = new Headers(init);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
-  const csrf = readCsrfToken();
-  if (csrf && !headers.has("X-CSRF-Token")) headers.set("X-CSRF-Token", csrf);
+  const unsafe = !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+  if (unsafe) {
+    const csrf = readCsrfToken();
+    if (csrf && !headers.has("X-CSRF-Token")) headers.set("X-CSRF-Token", csrf);
+  }
   return headers;
 }
 
@@ -122,7 +125,7 @@ async function postPassword(path: string, body: object): Promise<string | null> 
   const response = await fetch(`${API_URL}${path}`, {
     method: "POST",
     credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: authHeaders({ "Content-Type": "application/json" }, "POST"),
     body: JSON.stringify(body),
   });
   if (!response.ok) return readError(response);
@@ -145,7 +148,7 @@ export async function signIn(email: string, password: string, remember: boolean)
   const response = await fetch(`${API_URL}/users/login`, {
     method: "POST",
     credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: authHeaders({ "Content-Type": "application/json" }, "POST"),
     body: JSON.stringify({ email, password, remember }),
   });
   if (!response.ok) {
@@ -183,7 +186,7 @@ export async function signOut(): Promise<void> {
     await fetch(`${API_URL}/users/logout`, {
       method: "POST",
       credentials: "include",
-      headers: authHeaders({ "Content-Type": "application/json" }),
+      headers: authHeaders({ "Content-Type": "application/json" }, "POST"),
       body: "{}",
     });
   } catch {

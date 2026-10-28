@@ -1,6 +1,8 @@
-import { lazy, Suspense, useEffect, useState, useRef } from "react";
+import { lazy, Suspense, useEffect, useState, useRef, type ReactNode } from "react";
 import { LoginScreen } from "./components/LoginScreen";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { CierreCaja } from "./components/CierreCaja";
+import { Creditos } from "./components/Creditos";
 import { api, ApiError } from "./lib/api";
 import { fmt } from "./lib/money";
 import { BUSINESS_ROLES, modulesForRole, restoreSession, roleLabel, signOut, type UserRole } from "./lib/auth";
@@ -15,8 +17,6 @@ import { Badge, Button, Card, Input, Modal, PageHeader, ScreenFallback, Select }
 import type { DashboardStats } from "./features/dashboard/Dashboard";
 
 const Dashboard = lazy(() => import("./features/dashboard/Dashboard"));
-const CierreCaja = lazy(() => import("./components/CierreCaja").then((module) => ({ default: module.CierreCaja })));
-const Creditos = lazy(() => import("./components/Creditos").then((module) => ({ default: module.Creditos })));
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +44,8 @@ interface DaySale {
   ticket: string;
   clientId: number | null;
   clientName: string | null;
+  clientIdNumber?: string | null;
+  clientAddress?: string | null;
   payment: string;
   total: number;
   status: SaleStatus;
@@ -306,6 +308,8 @@ type SaleReceipt = {
   change: number;
   payment: PaymentMethod | string;
   clientName?: string;
+  clientIdNumber?: string;
+  clientAddress?: string;
   printed: boolean;
   soldAt?: string;
   reprint?: boolean;
@@ -329,6 +333,8 @@ function daySaleToReceipt(sale: DaySale): SaleReceipt {
     change: 0,
     payment: sale.payment,
     clientName: sale.clientName ?? undefined,
+    clientIdNumber: sale.clientIdNumber || undefined,
+    clientAddress: sale.clientAddress || undefined,
     printed: true,
     soldAt: sale.soldAt,
     reprint: true,
@@ -407,6 +413,8 @@ function printSaleTicket(sale: SaleReceipt) {
     ${sale.reprint && tpl.showReprint ? "<p><strong>REIMPRESIÓN</strong></p>" : ""}
     ${tpl.showDate ? `<p>${escapeHtml(when)}</p>` : ""}
     ${tpl.showClient && sale.clientName ? `<p>Cliente: ${escapeHtml(sale.clientName)}</p>` : ""}
+    ${tpl.showClient && sale.clientIdNumber ? `<p>Cédula: ${escapeHtml(sale.clientIdNumber)}</p>` : ""}
+    ${tpl.showClient && sale.clientAddress ? `<p>Dirección: ${escapeHtml(sale.clientAddress)}</p>` : ""}
     <div class="line"></div>
     <table>
       <tr><th>Cant</th><th>Producto</th><th class="r">Total</th></tr>
@@ -505,8 +513,8 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
             <div className={collapsed ? "lg:hidden" : ""}>
               <p className="font-display text-sm font-bold leading-tight">Promethixia</p>
               <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">Punto de venta</p>
-            </div>
           </div>
+        </div>
           <button
             type="button"
             onClick={onToggle}
@@ -521,7 +529,7 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
                 : <path strokeLinecap="round" strokeLinejoin="round" d="M15 5l-7 7 7 7" />}
             </svg>
           </button>
-        </div>
+      </div>
       </div>
       <nav className={`relative z-10 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-3 ${collapsed ? "lg:px-2" : ""}`}>
         {items.map(item => (
@@ -550,8 +558,8 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
           </span>
           <div className={collapsed ? "lg:hidden" : ""}>
             <ThemeToggle tone="navy" />
-          </div>
         </div>
+      </div>
         <div className={`rounded-2xl border border-white/15 bg-white/8 p-3 text-xs text-blue-100 backdrop-blur-md ${collapsed ? "lg:grid lg:size-10 lg:place-items-center lg:p-0" : ""}`} title={email}>
           {collapsed ? (
             <span className="hidden text-sm font-bold text-white lg:inline">{email.slice(0, 1).toUpperCase()}</span>
@@ -559,8 +567,8 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
           <div className={collapsed ? "lg:hidden" : ""}>
             <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-cyan-300">Sesión</p>
             <p className="truncate font-semibold text-white">{email}</p>
-          </div>
-        </div>
+      </div>
+      </div>
         <button
           type="button"
           onClick={onLogout}
@@ -571,9 +579,9 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H4m11 0-3-3m3 3-3 3M10 5h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-7" />
           </svg>
           <span className={collapsed ? "lg:hidden" : ""}>Cerrar sesión</span>
-        </button>
-      </div>
-      </div>
+                </button>
+            </div>
+          </div>
     </aside>
   );
 }
@@ -650,7 +658,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
         : [...products, normalized]);
       setCategories(await api<Category[]>("/categories"));
       setMovements(await api<InventoryMovement[]>("/inventory/movements"));
-      setShowModal(false);
+    setShowModal(false);
       setEditing(null);
       setForm(emptyForm);
     } catch (err) {
@@ -768,7 +776,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
             <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
             <Button onClick={openCreate}>+ Agregar producto</Button>
-          </div>
+        </div>
         }
       />
 
@@ -776,7 +784,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
         <div className="bg-blue-50 text-blue-700 rounded-xl px-4 py-3 text-sm flex justify-between items-center">
           <span>{importMsg}</span>
           <button onClick={() => setImportMsg(null)} className="text-blue-500 hover:text-blue-800">Cerrar</button>
-        </div>
+      </div>
       )}
 
       <div className="flex gap-3 flex-wrap">
@@ -1716,7 +1724,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         }),
       });
       const code = saved.ticket;
-      const clientName = clientId ? clients.find(c => c.id === clientId)?.name : undefined;
+      const client = clientId ? clients.find(c => c.id === clientId) : undefined;
       const sale: SaleReceipt = {
         code,
         items: cart.map(i => ({
@@ -1733,7 +1741,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         paid: paidNum,
         change,
         payment,
-        clientName,
+        clientName: client?.name,
+        clientIdNumber: client?.idNumber || undefined,
+        clientAddress: client?.address || undefined,
         printed: withPrint,
       };
       if (payment === "efectivo" || (payment === "mixto" && (amounts?.efectivo || 0) > 0)) openCashDrawer();
@@ -2457,6 +2467,8 @@ function Integraciones() {
       change: 0,
       payment: "efectivo",
       clientName: "Cliente de prueba",
+      clientIdNumber: "1.094.880.820",
+      clientAddress: "Calle 18 # 14-26",
       printed: true,
       soldAt: new Date().toISOString(),
       reprint: true,
@@ -2482,22 +2494,6 @@ function Integraciones() {
         }
       />
       {notice && <p className="-mt-2 text-sm font-semibold text-brand-700">{notice}</p>}
-
-      <Card className="p-5">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="font-bold text-slate-800 text-sm">Datos del local y factura</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Este nombre y estos datos salen en cada factura de venta: productos, precios e IMEI de celulares.
-            </p>
-          </div>
-        </div>
-        <TicketFields ticket={ticket} setTicket={setTicket} />
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => { void saveTicket(); }}>Guardar datos del local</Button>
-          <Button variant="secondary" size="sm" onClick={previewTicket}>Vista previa de factura</Button>
-        </div>
-      </Card>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {peripherals.map(p => (
@@ -2564,6 +2560,9 @@ function Integraciones() {
 
       {showTicketModal && (
         <Modal title="Datos del local y factura" onClose={() => setShowTicketModal(false)}>
+          <p className="mb-4 text-xs text-slate-500">
+            Este nombre y estos datos salen en cada factura de venta: productos, precios e IMEI de celulares.
+          </p>
           <TicketFields ticket={ticket} setTicket={setTicket} />
           <p className="mt-4 text-xs text-slate-500">
             La fecha de la esquina superior es del navegador. Al imprimir usamos márgenes en cero para ocultarla;
@@ -2984,6 +2983,15 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
 
+function KeepAlive({ show, children }: { show: boolean; children: ReactNode }) {
+  const [seen, setSeen] = useState(show);
+  useEffect(() => {
+    if (show) setSeen(true);
+  }, [show]);
+  if (!seen) return null;
+  return <div className={show ? "" : "hidden"}>{children}</div>;
+}
+
 export default function App() {
   const [module, setModule] = useState<Module>("dashboard");
   const [products, setProducts] = useState<Product[]>([]);
@@ -3036,23 +3044,18 @@ export default function App() {
     bindTicketCache(sessionEmail);
     bindProductSettings(sessionEmail);
     if (sessionRole === "admin") return;
-    Promise.all([
-      api<Product[]>("/products"),
-      api<Client[]>("/clients"),
-      api<Supplier[]>("/suppliers"),
-      api<DashboardStats>("/dashboard"),
-      api<Category[]>("/categories"),
-      api<InventoryMovement[]>("/inventory/movements"),
-      api<IntegrationsState>("/integrations"),
-    ]).then(([nextProducts, nextClients, nextSuppliers, nextStats, nextCategories, nextMovements, integrations]) => {
-      setProducts(normalizeProducts(nextProducts));
-      setClients(nextClients);
-      setSuppliers(nextSuppliers);
-      setStats(nextStats);
-      setCategories(nextCategories);
-      setMovements(nextMovements);
+    const load = <T,>(path: string, apply: (value: T) => void) => {
+      void api<T>(path).then(apply).catch(() => undefined);
+    };
+    load<Product[]>("/products", next => setProducts(normalizeProducts(next)));
+    load<Client[]>("/clients", setClients);
+    load<DashboardStats>("/dashboard", setStats);
+    load<Category[]>("/categories", setCategories);
+    load<Supplier[]>("/suppliers", setSuppliers);
+    load<InventoryMovement[]>("/inventory/movements?limit=80", setMovements);
+    load<IntegrationsState>("/integrations", integrations => {
       if (integrations.ticket) writeTicketTemplate(integrations.ticket);
-    }).catch(() => undefined);
+    });
   }, [sessionEmail, sessionRole]);
 
   useEffect(() => {
@@ -3061,7 +3064,7 @@ export default function App() {
   }, [sessionEmail, module]);
 
   if (!authReady) {
-    return (
+  return (
       <div className="mesh-navy grid min-h-dvh place-items-center">
         <img src="/brand/promethixia-mark.svg" alt="" width={72} height={72} className="size-16 animate-shimmer drop-shadow-[0_12px_28px_rgba(59,130,246,0.45)]" />
       </div>
@@ -3131,31 +3134,31 @@ export default function App() {
           </div>
           <ThemeToggle compact />
         </div>
-        <div key={`${sessionEmail}:${activeModule}`} className="animate-rise">
+        <div key={sessionEmail} className="animate-rise">
         <Suspense fallback={<ScreenFallback />}>
-        {activeModule === "dashboard" && <Dashboard stats={stats} />}
-        {activeModule === "productos" && (
+        <KeepAlive show={activeModule === "dashboard"}><Dashboard stats={stats} /></KeepAlive>
+        <KeepAlive show={activeModule === "productos"}>
           <Productos
             products={products} setProducts={setProducts}
             categories={categories} setCategories={setCategories}
             movements={movements} setMovements={setMovements}
           />
-        )}
-        {activeModule === "inventario" && (
+        </KeepAlive>
+        <KeepAlive show={activeModule === "inventario"}>
           <Inventario
             products={products} setProducts={setProducts}
             movements={movements} setMovements={setMovements}
           />
-        )}
-        {activeModule === "clientes" && <Clientes clients={clients} setClients={setClients} />}
-        {activeModule === "proveedores" && (
+        </KeepAlive>
+        <KeepAlive show={activeModule === "clientes"}><Clientes clients={clients} setClients={setClients} /></KeepAlive>
+        <KeepAlive show={activeModule === "proveedores"}>
           <Proveedores
             suppliers={suppliers} setSuppliers={setSuppliers}
             products={products} setProducts={setProducts}
             movements={movements} setMovements={setMovements}
           />
-        )}
-        {activeModule === "ventas" && (
+        </KeepAlive>
+        <KeepAlive show={activeModule === "ventas"}>
           <Ventas
             products={products} setProducts={setProducts}
             clients={clients} setClients={setClients}
@@ -3165,11 +3168,11 @@ export default function App() {
               setModule("integraciones");
             } : undefined}
           />
-        )}
-        {activeModule === "cierre" && <CierreCaja />}
-        {activeModule === "creditos" && <Creditos />}
-        {activeModule === "integraciones" && <Integraciones />}
-        {activeModule === "usuarios" && <Usuarios role={sessionRole} sessionEmail={sessionEmail} />}
+        </KeepAlive>
+        <KeepAlive show={activeModule === "cierre"}><CierreCaja /></KeepAlive>
+        <KeepAlive show={activeModule === "creditos"}><Creditos /></KeepAlive>
+        <KeepAlive show={activeModule === "integraciones"}><Integraciones /></KeepAlive>
+        <KeepAlive show={activeModule === "usuarios"}><Usuarios role={sessionRole} sessionEmail={sessionEmail} /></KeepAlive>
         </Suspense>
         </div>
       </main>

@@ -45,7 +45,8 @@ export function CierreCaja() {
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    setLoading(true);
+    const firstLoad = current === null && history.length === 0 && summary === null;
+    if (firstLoad) setLoading(true);
     setError("");
     try {
       const [openShift, shifts] = await Promise.all([
@@ -54,7 +55,10 @@ export function CierreCaja() {
       ]);
       setCurrent(openShift);
       setHistory(shifts);
-      if (openShift) {
+      if (openShift && typeof openShift.salesCount === "number") {
+        setSummary(openShift);
+        setSelectedId(openShift.id);
+      } else if (openShift) {
         const detail = await api<ShiftSummary>(`/shifts/${openShift.id}/summary`);
         setSummary(detail);
         setSelectedId(openShift.id);

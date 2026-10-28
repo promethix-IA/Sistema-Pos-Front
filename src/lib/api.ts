@@ -14,7 +14,8 @@ function expireSession(): void {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = authHeaders(init.headers);
+  const method = (init.method || "GET").toUpperCase();
+  const headers = authHeaders(init.headers, method);
   if (!headers.has("Content-Type") && init.body != null) {
     headers.set("Content-Type", "application/json");
   }
