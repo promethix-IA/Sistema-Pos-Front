@@ -142,7 +142,7 @@ interface IntegrationsState {
   peripherals: { id: string; label: string; connected: boolean; port: string }[];
   printer: { host: string; tcpPort: number; paperWidth: string };
   ticket?: TicketTemplate;
-  dian: { nit: string; softwareId: string; softwarePin: string; environment: string };
+  dian: { nit: string; softwareId: string; softwarePin: string; softwarePinSet?: boolean; environment: string };
 }
 
 const DEFAULT_TICKET: TicketTemplate = {
@@ -2559,7 +2559,14 @@ function Integraciones() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input label="NIT empresa" value={state.dian.nit} onChange={e => setState({ ...state, dian: { ...state.dian, nit: e.target.value } })} />
           <Input label="Software ID" value={state.dian.softwareId} onChange={e => setState({ ...state, dian: { ...state.dian, softwareId: e.target.value } })} />
-          <Input label="PIN de software" type="password" value={state.dian.softwarePin} onChange={e => setState({ ...state, dian: { ...state.dian, softwarePin: e.target.value } })} />
+          <Input
+            label="PIN de software"
+            type="password"
+            autoComplete="new-password"
+            placeholder={state.dian.softwarePinSet ? "PIN guardado — escribe uno nuevo para cambiarlo" : ""}
+            value={state.dian.softwarePin}
+            onChange={e => setState({ ...state, dian: { ...state.dian, softwarePin: e.target.value } })}
+          />
           <Select label="Ambiente" value={state.dian.environment} onChange={e => setState({ ...state, dian: { ...state.dian, environment: e.target.value } })}><option>Producción</option><option>Habilitación / Pruebas</option></Select>
         </div>
         <div className="mt-4 p-3 bg-emerald-50 rounded-xl flex items-center gap-3">
