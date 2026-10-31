@@ -2,6 +2,7 @@ import { API_URL } from "./config";
 
 const LEGACY_STORAGE_KEY = "promethixia-auth";
 const CSRF_COOKIE = "pos_csrf";
+const CSRF_STORAGE_KEY = "promethixia-csrf";
 
 export const BRAND_NAME = "Promethixia";
 export const CONTACT_EMAIL = "promethixia@gmail.com";
@@ -79,15 +80,32 @@ function wipeLegacyTokenStorage() {
 
 wipeLegacyTokenStorage();
 
-export function readCsrfToken(): string {
-  if (typeof document === "undefined") return "";
-  const prefix = `${CSRF_COOKIE}=`;
-  const row = document.cookie.split("; ").find(part => part.startsWith(prefix));
-  if (!row) return "";
+export function rememberCsrfToken(token?: string | null): void {
+  const value = (token || "").trim();
+  if (!value || typeof sessionStorage === "undefined") return;
   try {
-    return decodeURIComponent(row.slice(prefix.length));
+    sessionStorage.setItem(CSRF_STORAGE_KEY, value);
   } catch {
-    return row.slice(prefix.length);
+    /* private mode */
+  }
+}
+
+export function readCsrfToken(): string {
+  if (typeof document !== "undefined") {
+    const prefix = `${CSRF_COOKIE}=`;
+    const row = document.cookie.split("; ").find(part => part.startsWith(prefix));
+    if (row) {
+      try {
+        return decodeURIComponent(row.slice(prefix.length));
+      } catch {
+        return row.slice(prefix.length);
+      }
+    }
+  }
+  try {
+    return sessionStorage.getItem(CSRF_STORAGE_KEY) || "";
+  } catch {
+    return "";
   }
 }
 
@@ -108,6 +126,11 @@ export const authFetchInit: Pick<RequestInit, "credentials"> = {
 
 export function clearSession(): void {
   wipeLegacyTokenStorage();
+  try {
+    sessionStorage.removeItem(CSRF_STORAGE_KEY);
+  } catch {
+    /* private mode */
+  }
 }
 
 async function readError(response: Response): Promise<string> {
@@ -156,10 +179,14 @@ export async function signIn(email: string, password: string, remember: boolean)
     return { email: null, role: null, desktopDownload: false, error: await readError(response) };
   }
   wipeLegacyTokenStorage();
-  const data = (await response.json()) as { user?: { email: string; role?: string; desktop_download?: boolean } };
+  const data = (await response.json()) as {
+    csrf_token?: string;
+    user?: { email: string; role?: string; desktop_download?: boolean };
+  };
   if (!data.user?.email) {
     return { email: null, role: null, desktopDownload: false, error: "No pudimos iniciar sesión. Intenta de nuevo." };
   }
+  rememberCsrfToken(data.csrf_token);
   return {
     email: data.user.email,
     role: asRole(data.user.role),
@@ -178,7 +205,13 @@ export async function restoreSession(): Promise<{ user: { email: string; role: U
     clearSession();
     return null;
   }
-  const user = (await response.json()) as { email: string; role?: string; desktop_download?: boolean };
+  const user = (await response.json()) as {
+    email: string;
+    role?: string;
+    desktop_download?: boolean;
+    csrf_token?: string;
+  };
+  rememberCsrfToken(user.csrf_token);
   return { user: { email: user.email, role: asRole(user.role), desktopDownload: Boolean(user.desktop_download) } };
 }
 
