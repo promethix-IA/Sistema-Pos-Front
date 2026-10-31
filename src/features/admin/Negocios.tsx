@@ -4,7 +4,7 @@ import { downloadDesktopInstaller } from "../../lib/download";
 import { roleLabel } from "../../lib/auth";
 import { Badge, Button, Card, Input, Modal, PageHeader, Select } from "../../ui";
 import { CrearLicenciaModal } from "../licencias/Licencias";
-import { accountAccess, accountBlock, accountPlanName, formatAdminDay, inOneYear, type AccountUser } from "./cuentas";
+import { accountAccess, accountBlock, accountPlanName, formatAdminDay, type AccountUser } from "./cuentas";
 
 export function Negocios({ sessionEmail }: { sessionEmail: string }) {
   const emptyForm = { email: "", password: "", plan: "trial" as "trial" | "monthly" };
@@ -177,7 +177,7 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
     <div className="flex flex-col gap-5 p-4 sm:p-6">
       <PageHeader
         title="Configuración de negocios"
-        subtitle="Activa la descarga, elige el Windows del negocio y envíale el .lic de 1 año. La fecha va solo en la licencia, no en la descarga."
+        subtitle="Activa la descarga, elige el Windows del negocio y envíale el .lic con mensualidad, tres meses o anualidad."
         actions={<Button onClick={() => { setError(""); setShowModal(true); }}>+ Crear negocio</Button>}
       />
 
@@ -188,7 +188,7 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
             <span className="font-bold text-brand-700">1.</span> Activa el interruptor para que vean “Descargar POS” y elige si su computador es Windows 10/11 o 7/8.
           </li>
           <li className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <span className="font-bold text-brand-700">2.</span> Crea el .lic de 1 año con el código del computador. Ese archivo es la vigencia; la descarga no pide fecha.
+            <span className="font-bold text-brand-700">2.</span> Crea el .lic eligiendo mensualidad, tres meses o anualidad. Esa fecha es del aplicativo; la descarga no la pide.
           </li>
           <li className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <span className="font-bold text-brand-700">3.</span> El cliente entra al POS en el navegador, baja el instalador y lo ejecuta encima. Los datos no se borran.
@@ -306,10 +306,10 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
       {licenseFor && (
         <CrearLicenciaModal
           initialCliente={licenseFor.email.split("@")[0] || licenseFor.email}
-          initialHasta={inOneYear()}
           onClose={() => setLicenseFor(null)}
-          onCreated={(filename) => {
-            setNotice(`Se descargó ${filename}. No queda en el servidor: envíasela al cliente para “Active su licencia”.`);
+          onCreated={(filename, periodo, hasta) => {
+            const vigencia = periodo === "mensual" ? "mensualidad" : periodo === "trimestral" ? "tres meses" : "anualidad";
+            setNotice(`Se descargó ${filename} (${vigencia} hasta ${formatAdminDay(hasta)}). Envíasela al cliente para “Active su licencia”.`);
           }}
         />
       )}
