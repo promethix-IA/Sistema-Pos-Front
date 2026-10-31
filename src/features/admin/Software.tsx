@@ -40,11 +40,11 @@ export function Software() {
 
   const downloadDesktop = async (user: AccountUser, channel: "windows10-11" | "windows7-8") => {
     setError("");
-    setDownloadingId(`${user.id}:${channel}`);
+    setDownloadingId(`${user.id}`);
     try {
-      const etiqueta = channel === "windows7-8" ? "Windows7-8" : "Windows10-11";
+      const etiqueta = channel === "windows7-8" ? "Windows 7/8" : "Windows 10/11";
       await downloadDesktopInstaller(channel, user.id);
-      setNotice(`Instalador ${etiqueta} listo para ${user.email}.`);
+      setNotice(`Se bajó un instalador ${etiqueta} para ${user.email}.`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No pudimos descargar el POS de escritorio.");
     } finally {
@@ -108,13 +108,16 @@ export function Software() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" disabled={downloadingId === `${user.id}:windows10-11`} onClick={() => { void downloadDesktop(user, "windows10-11"); }}>
-                {downloadingId === `${user.id}:windows10-11` ? "Descargando…" : "Instalador 10/11"}
+              <Button
+                size="sm"
+                disabled={downloadingId === `${user.id}`}
+                onClick={() => {
+                  void downloadDesktop(user, user.desktop_channel === "windows7-8" ? "windows7-8" : "windows10-11");
+                }}
+              >
+                {downloadingId === `${user.id}` ? "Descargando…" : "Descargar instalador"}
               </Button>
-              <Button size="sm" variant="secondary" disabled={downloadingId === `${user.id}:windows7-8`} onClick={() => { void downloadDesktop(user, "windows7-8"); }}>
-                {downloadingId === `${user.id}:windows7-8` ? "Descargando…" : "Instalador 7/8"}
-              </Button>
-              <Button size="sm" onClick={() => { setError(""); setLicenseFor(user); }}>
+              <Button size="sm" variant="secondary" onClick={() => { setError(""); setLicenseFor(user); }}>
                 Crear licencia .lic
               </Button>
             </div>

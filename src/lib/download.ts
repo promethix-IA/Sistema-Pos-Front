@@ -50,21 +50,37 @@ const INSTALADORES_PUBLICOS: Record<string, string> = {
   "windows7-8": "https://github.com/promethix-IA/promethixia-instaladores/releases/download/instalador-1.0.0/Promethixia-POS-Instalador-1.0.0-Windows7-8.exe",
 };
 
+let descargaEnCurso = false;
+
+function bajarUnaVez(url: string): void {
+  const link = document.createElement("a");
+  link.href = url;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 export async function downloadDesktopInstaller(channel: string, userId?: number): Promise<string> {
-  const qs = `channel=${encodeURIComponent(channel)}`;
-  const infoPath = userId != null ? `/desktop/${userId}/link?${qs}` : `/desktop/link?${qs}`;
-  const info = await api<{ local: boolean; url: string; filename: string }>(infoPath);
-  const url = info.url || INSTALADORES_PUBLICOS[channel];
-  if (url) {
-    const opened = window.open(url, "_blank", "noopener,noreferrer");
-    if (!opened) {
-      window.location.assign(url);
+  if (descargaEnCurso) return "";
+  descargaEnCurso = true;
+  try {
+    const qs = `channel=${encodeURIComponent(channel)}`;
+    const infoPath = userId != null ? `/desktop/${userId}/link?${qs}` : `/desktop/link?${qs}`;
+    const info = await api<{ local: boolean; url: string; filename: string }>(infoPath);
+    const url = info.url || INSTALADORES_PUBLICOS[channel];
+    if (url) {
+      bajarUnaVez(url);
+      return info.filename;
     }
-    return info.filename;
+    if (!info.local) {
+      throw new ApiError("Aún no está el instalador en el servidor.");
+    }
+    const filePath = userId != null ? `/desktop/${userId}/installer?${qs}` : `/desktop/installer?${qs}`;
+    return await downloadAuthenticated(filePath, info.filename);
+  } finally {
+    window.setTimeout(() => {
+      descargaEnCurso = false;
+    }, 1500);
   }
-  if (!info.local) {
-    throw new ApiError("Aún no está el instalador en el servidor.");
-  }
-  const filePath = userId != null ? `/desktop/${userId}/installer?${qs}` : `/desktop/installer?${qs}`;
-  return downloadAuthenticated(filePath, info.filename);
 }
