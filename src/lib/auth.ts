@@ -1,5 +1,8 @@
 import { API_URL } from "./config";
-const STORAGE_KEY = "promethixia-auth";
+
+const LEGACY_STORAGE_KEY = "promethixia-auth";
+const CSRF_COOKIE = "pos_csrf";
+const CSRF_STORAGE_KEY = "promethixia-csrf";
 
 export const BRAND_NAME = "Promethixia";
 export const CONTACT_EMAIL = "promethixia@gmail.com";
@@ -32,7 +35,7 @@ const ALL_MODULES = [
 ] as const;
 
 const ROLE_MODULES: Record<UserRole, readonly string[]> = {
-  admin: ["usuarios"],
+  admin: ["usuarios", "licencias", "caja"],
   owner: ALL_MODULES,
   administrador: ALL_MODULES,
   cajero: ["dashboard", "ventas", "cierre", "creditos", "clientes"],
@@ -54,12 +57,8 @@ export function roleLabel(role: UserRole | string | undefined): string {
 export interface SignInResult {
   email: string | null;
   role: UserRole | null;
+  desktopDownload: boolean;
   error: string | null;
-}
-
-interface StoredSession {
-  accessToken: string;
-  email: string;
 }
 
 function asRole(value: unknown): UserRole {
@@ -70,62 +69,68 @@ function asRole(value: unknown): UserRole {
   return "owner";
 }
 
-const preference = { remember: true };
+function wipeLegacyTokenStorage() {
+  try {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    sessionStorage.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    /* private mode */
+  }
+}
 
-const storage = {
-  getItem(key: string): string | null {
-    return localStorage.getItem(key) ?? sessionStorage.getItem(key);
-  },
-  setItem(key: string, value: string): void {
-    const target = preference.remember ? localStorage : sessionStorage;
-    const other = preference.remember ? sessionStorage : localStorage;
-    other.removeItem(key);
-    target.setItem(key, value);
-  },
-  removeItem(key: string): void {
-    localStorage.removeItem(key);
-    sessionStorage.removeItem(key);
-  },
+wipeLegacyTokenStorage();
+
+export function rememberCsrfToken(token?: string | null): void {
+  const value = (token || "").trim();
+  if (!value || typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.setItem(CSRF_STORAGE_KEY, value);
+  } catch {
+    /* private mode */
+  }
+}
+
+export function readCsrfToken(): string {
+  if (typeof document !== "undefined") {
+    const prefix = `${CSRF_COOKIE}=`;
+    const row = document.cookie.split("; ").find(part => part.startsWith(prefix));
+    if (row) {
+      try {
+        return decodeURIComponent(row.slice(prefix.length));
+      } catch {
+        return row.slice(prefix.length);
+      }
+    }
+  }
+  try {
+    return sessionStorage.getItem(CSRF_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function authHeaders(init?: HeadersInit, method = "GET"): Headers {
+  const headers = new Headers(init);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  const unsafe = !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+  if (unsafe) {
+    const csrf = readCsrfToken();
+    if (csrf && !headers.has("X-CSRF-Token")) headers.set("X-CSRF-Token", csrf);
+  }
+  return headers;
+}
+
+export const authFetchInit: Pick<RequestInit, "credentials"> = {
+  credentials: "include",
 };
 
-function tokenExpired(token: string): boolean {
-  const parts = token.split(".");
-  if (parts.length !== 3) return true;
-  try {
-    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(atob(padded)) as { exp?: number; typ?: string };
-    if (payload.typ && payload.typ !== "access") return true;
-    if (typeof payload.exp !== "number") return true;
-    return payload.exp * 1000 <= Date.now() + 5000;
-  } catch {
-    return true;
-  }
-}
-
-function readSession(): StoredSession | null {
-  const raw = storage.getItem(STORAGE_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as StoredSession;
-    if (!parsed.accessToken || !parsed.email) return null;
-    if (tokenExpired(parsed.accessToken)) {
-      storage.removeItem(STORAGE_KEY);
-      return null;
-    }
-    return parsed;
-  } catch {
-    storage.removeItem(STORAGE_KEY);
-    return null;
-  }
-}
-
-function saveSession(session: StoredSession, remember: boolean): void {
-  preference.remember = remember;
-  storage.setItem(STORAGE_KEY, JSON.stringify(session));
-}
-
 export function clearSession(): void {
-  storage.removeItem(STORAGE_KEY);
+  wipeLegacyTokenStorage();
+  try {
+    sessionStorage.removeItem(CSRF_STORAGE_KEY);
+  } catch {
+    /* private mode */
+  }
 }
 
 async function readError(response: Response): Promise<string> {
@@ -140,42 +145,91 @@ async function readError(response: Response): Promise<string> {
   return "No pudimos completar la solicitud.";
 }
 
+async function postPassword(path: string, body: object): Promise<string | null> {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: authHeaders({ "Content-Type": "application/json" }, "POST"),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) return readError(response);
+  return null;
+}
+
+export async function requestPasswordReset(email: string): Promise<string | null> {
+  return postPassword("/users/password/forgot", { email });
+}
+
+export async function verifyPasswordReset(email: string, code: string): Promise<string | null> {
+  return postPassword("/users/password/verify", { email, code });
+}
+
+export async function resetPassword(email: string, code: string, password: string): Promise<string | null> {
+  return postPassword("/users/password/reset", { email, code, password });
+}
+
 export async function signIn(email: string, password: string, remember: boolean): Promise<SignInResult> {
   const response = await fetch(`${API_URL}/users/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    credentials: "include",
+    headers: authHeaders({ "Content-Type": "application/json" }, "POST"),
     body: JSON.stringify({ email, password, remember }),
   });
   if (!response.ok) {
-    return { email: null, role: null, error: await readError(response) };
+    return { email: null, role: null, desktopDownload: false, error: await readError(response) };
   }
-  const data = (await response.json()) as { access_token: string; user: { email: string; role?: string } };
-  if (!data.access_token) {
-    return { email: null, role: null, error: "No pudimos iniciar sesión. Intenta de nuevo." };
+  wipeLegacyTokenStorage();
+  const data = (await response.json()) as {
+    csrf_token?: string;
+    user?: { email: string; role?: string; desktop_download?: boolean };
+  };
+  if (!data.user?.email) {
+    return { email: null, role: null, desktopDownload: false, error: "No pudimos iniciar sesión. Intenta de nuevo." };
   }
-  saveSession({ accessToken: data.access_token, email: data.user.email }, remember);
-  return { email: data.user.email, role: asRole(data.user.role), error: null };
+  rememberCsrfToken(data.csrf_token);
+  return {
+    email: data.user.email,
+    role: asRole(data.user.role),
+    desktopDownload: Boolean(data.user.desktop_download),
+    error: null,
+  };
 }
 
-export async function restoreSession(): Promise<{ user: { email: string; role: UserRole } } | null> {
-  const session = readSession();
-  if (!session) return null;
-
+export async function restoreSession(): Promise<{ user: { email: string; role: UserRole; desktopDownload: boolean } } | null> {
+  wipeLegacyTokenStorage();
   const response = await fetch(`${API_URL}/users/me`, {
-    headers: { Authorization: `Bearer ${session.accessToken}`, Accept: "application/json" },
+    credentials: "include",
+    headers: authHeaders(),
   });
   if (!response.ok) {
     clearSession();
     return null;
   }
-  const user = (await response.json()) as { email: string; role?: string };
-  return { user: { email: user.email, role: asRole(user.role) } };
+  const user = (await response.json()) as {
+    email: string;
+    role?: string;
+    desktop_download?: boolean;
+    csrf_token?: string;
+  };
+  rememberCsrfToken(user.csrf_token);
+  return { user: { email: user.email, role: asRole(user.role), desktopDownload: Boolean(user.desktop_download) } };
 }
 
+/** El JWT ya no se guarda en el navegador; vive en una cookie httpOnly. */
 export function getAccessToken(): string | null {
-  return readSession()?.accessToken ?? null;
+  return null;
 }
 
 export async function signOut(): Promise<void> {
+  try {
+    await fetch(`${API_URL}/users/logout`, {
+      method: "POST",
+      credentials: "include",
+      headers: authHeaders({ "Content-Type": "application/json" }, "POST"),
+      body: "{}",
+    });
+  } catch {
+    /* still drop local leftovers */
+  }
   clearSession();
 }

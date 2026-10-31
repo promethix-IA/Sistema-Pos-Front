@@ -7,6 +7,7 @@ No es la landing comercial. El sitio de marketing está en `Landing-Page`. Esta 
 ## Qué hace
 
 - Login con correo y contraseña contra `POST /users/login`.
+- Recuperar contraseña: el usuario pide un código al correo, lo verifica y cambia la clave.
 - Dashboard con ventas del día, semana y año.
 - Productos por unidad o granel, categorías e importación CSV.
 - Inventario, ajustes, movimientos y kardex.
@@ -34,6 +35,7 @@ src/
   App.tsx            # shell, módulos y componentes compartidos
   components/
     LoginScreen.tsx
+    RecoverPassword.tsx
     CierreCaja.tsx
     Creditos.tsx
   lib/

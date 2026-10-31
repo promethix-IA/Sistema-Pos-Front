@@ -35,7 +35,8 @@ export function Creditos() {
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    setLoading(true);
+    const firstLoad = debts.length === 0;
+    if (firstLoad) setLoading(true);
     setError("");
     try {
       const status = filter === "open" ? undefined : filter === "paid" ? "paid" : undefined;

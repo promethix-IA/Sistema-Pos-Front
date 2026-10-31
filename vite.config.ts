@@ -15,6 +15,8 @@ export default defineConfig(({ mode }) => {
     build: {
       sourcemap: emitSourcemaps ? 'inline' : false,
       minify: !emitSourcemaps,
+      // Electron 22 (Windows 7/8) trae Chromium 108.
+      ...(process.env.VITE_ESCRITORIO_LEGADO === "1" ? { target: "chrome108" } : {}),
     },
     plugins: [
       react(),
@@ -37,6 +39,8 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: 'http://127.0.0.1:8000',
           changeOrigin: true,
+          timeout: 600_000,
+          proxyTimeout: 600_000,
           rewrite: (requestPath) => requestPath.replace(/^\/api/, ''),
         },
       },

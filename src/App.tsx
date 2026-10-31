@@ -1,9 +1,16 @@
-import { lazy, Suspense, useEffect, useState, useRef } from "react";
+import { lazy, Suspense, useEffect, useState, useRef, type ReactNode } from "react";
 import { LoginScreen } from "./components/LoginScreen";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { CierreCaja } from "./components/CierreCaja";
+import { Creditos } from "./components/Creditos";
+import { Negocios } from "./features/admin/Negocios";
+import { DescargarPos } from "./features/descarga/DescargarPos";
+import { Caja } from "./features/admin/Caja";
+import { Software } from "./features/admin/Software";
 import { api, ApiError } from "./lib/api";
 import { fmt } from "./lib/money";
-import { BUSINESS_ROLES, modulesForRole, restoreSession, roleLabel, signOut, type UserRole } from "./lib/auth";
+import { API_URL } from "./lib/config";
+import { authHeaders, BUSINESS_ROLES, modulesForRole, restoreSession, roleLabel, signOut, type UserRole } from "./lib/auth";
 import {
   bindProductSettings,
   normalizeProduct,
@@ -15,12 +22,10 @@ import { Badge, Button, Card, Input, Modal, PageHeader, ScreenFallback, Select }
 import type { DashboardStats } from "./features/dashboard/Dashboard";
 
 const Dashboard = lazy(() => import("./features/dashboard/Dashboard"));
-const CierreCaja = lazy(() => import("./components/CierreCaja").then((module) => ({ default: module.CierreCaja })));
-const Creditos = lazy(() => import("./components/Creditos").then((module) => ({ default: module.Creditos })));
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "cierre" | "creditos" | "integraciones" | "usuarios";
+type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "cierre" | "creditos" | "integraciones" | "usuarios" | "licencias" | "caja" | "descarga";
 type PaymentMethod = "efectivo" | "tarjeta" | "transferencia" | "credito" | "mixto";
 
 type MovementType = "ENTRADA_COMPRA" | "SALIDA_VENTA" | "AJUSTE" | "ENTRADA_INICIAL" | "IMPORTACION" | "ENTRADA_DEVOLUCION";
@@ -44,6 +49,8 @@ interface DaySale {
   ticket: string;
   clientId: number | null;
   clientName: string | null;
+  clientIdNumber?: string | null;
+  clientAddress?: string | null;
   payment: string;
   total: number;
   status: SaleStatus;
@@ -119,6 +126,9 @@ interface SaleTicket {
 interface TicketTemplate {
   storeName: string;
   nitLine: string;
+  phone: string;
+  address: string;
+  city: string;
   footer: string;
   showDate: boolean;
   showClient: boolean;
@@ -132,12 +142,15 @@ interface IntegrationsState {
   peripherals: { id: string; label: string; connected: boolean; port: string }[];
   printer: { host: string; tcpPort: number; paperWidth: string };
   ticket?: TicketTemplate;
-  dian: { nit: string; softwareId: string; softwarePin: string; environment: string };
+  dian: { nit: string; softwareId: string; softwarePin: string; softwarePinSet?: boolean; environment: string };
 }
 
 const DEFAULT_TICKET: TicketTemplate = {
   storeName: "Mi negocio",
   nitLine: "",
+  phone: "",
+  address: "",
+  city: "",
   footer: "¡Gracias por su compra!",
   showDate: true,
   showClient: true,
@@ -321,12 +334,14 @@ function openCashDrawer() {
 
 type SaleReceipt = {
   code: string;
-  items: { name: string; qty: number; weight?: number; lineTotal: number; imei?: string }[];
+  items: { name: string; qty: number; weight?: number; unitPrice?: number; lineTotal: number; imei?: string }[];
   total: number;
   paid: number;
   change: number;
   payment: PaymentMethod | string;
   clientName?: string;
+  clientIdNumber?: string;
+  clientAddress?: string;
   printed: boolean;
   soldAt?: string;
   reprint?: boolean;
@@ -337,6 +352,7 @@ function daySaleToReceipt(sale: DaySale): SaleReceipt {
     name: item.productName,
     qty: item.qty,
     weight: item.weight ?? undefined,
+    unitPrice: item.unitPrice,
     lineTotal: item.lineTotal,
     imei: item.imei || undefined,
   }));
@@ -349,6 +365,8 @@ function daySaleToReceipt(sale: DaySale): SaleReceipt {
     change: 0,
     payment: sale.payment,
     clientName: sale.clientName ?? undefined,
+    clientIdNumber: sale.clientIdNumber || undefined,
+    clientAddress: sale.clientAddress || undefined,
     printed: true,
     soldAt: sale.soldAt,
     reprint: true,
@@ -369,17 +387,27 @@ function printSaleTicket(sale: SaleReceipt) {
   const tpl = readTicketTemplate();
   const rows = sale.items
     .map(i => {
-      const qty = i.weight != null ? `${i.qty}kg` : `x${i.qty}`;
-      const imei = i.imei ? `<br/><span style="color:#555">${escapeHtml(formatStoredImei(i.imei))}</span>` : "";
-      return `<tr><td>${escapeHtml(i.name)}${imei}<br/><span style="color:#555">${qty}</span></td><td style="text-align:right">${fmt(i.lineTotal)}</td></tr>`;
+      const qtyLabel = i.weight != null ? `${i.qty} kg` : String(i.qty);
+      const unit = i.unitPrice ?? (i.qty ? i.lineTotal / i.qty : i.lineTotal);
+      const imei = i.imei ? `<div class="meta">${escapeHtml(formatStoredImei(i.imei))}</div>` : "";
+      return `<tr>
+        <td class="qty">${escapeHtml(qtyLabel)}</td>
+        <td>${escapeHtml(i.name)}<div class="meta">${fmt(unit)} c/u</div>${imei}</td>
+        <td class="r">${fmt(i.lineTotal)}</td>
+      </tr>`;
     })
     .join("");
   const when = sale.soldAt
     ? new Date(sale.soldAt).toLocaleString("es-CO")
     : new Date().toLocaleString("es-CO");
   const paymentText = paymentLabel[sale.payment as PaymentMethod] ?? String(sale.payment);
-  const extra = (tpl.extraHeader || "")
-    .split(/\r?\n/)
+  const headerLines = [
+    tpl.nitLine,
+    tpl.phone ? (/^(cel|tel|whats)/i.test(tpl.phone.trim()) ? tpl.phone : `Tel. ${tpl.phone}`) : "",
+    tpl.address,
+    tpl.city,
+    ...(tpl.extraHeader || "").split(/\r?\n/),
+  ]
     .map(line => line.trim())
     .filter(Boolean)
     .map(line => `<p>${escapeHtml(line)}</p>`)
@@ -396,28 +424,39 @@ function printSaleTicket(sale: SaleReceipt) {
       }
       body{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .ticket{width:72mm;max-width:100%;margin:0;padding:8px}
-      h1{font-size:14px;text-align:center;margin:0 0 4px}
+      h1{font-size:15px;text-align:center;margin:0 0 2px;text-transform:uppercase}
+      .doc{font-size:11px;font-weight:700;letter-spacing:.04em;margin:6px 0 2px}
       p{margin:2px 0;text-align:center}
-      table{width:100%;border-collapse:collapse;margin-top:8px}
-      td{padding:4px 0;vertical-align:top}
+      table{width:100%;border-collapse:collapse;margin-top:6px}
+      td{padding:3px 0;vertical-align:top}
+      td.qty{width:14%;padding-right:4px}
+      td.r{text-align:right;white-space:nowrap}
+      th{font-size:10px;text-align:left;border-bottom:1px dashed #000;padding:0 0 4px;font-weight:700}
+      th.r{text-align:right}
+      .meta{color:#333;font-size:10px}
       .line{border-top:1px dashed #000;margin:8px 0}
       .tot{font-weight:700;font-size:13px}
     </style></head><body>
     <div class="ticket">
     <h1>${escapeHtml(tpl.storeName)}</h1>
-    ${tpl.nitLine ? `<p>${escapeHtml(tpl.nitLine)}</p>` : ""}
-    ${extra}
-    <p>Ticket #${escapeHtml(sale.code)}</p>
+    ${headerLines}
+    <p class="doc">FACTURA DE VENTA</p>
+    <p>No. ${escapeHtml(sale.code)}</p>
     ${sale.reprint && tpl.showReprint ? "<p><strong>REIMPRESIÓN</strong></p>" : ""}
     ${tpl.showDate ? `<p>${escapeHtml(when)}</p>` : ""}
     ${tpl.showClient && sale.clientName ? `<p>Cliente: ${escapeHtml(sale.clientName)}</p>` : ""}
-    <div class="line"></div>
-    <table>${rows}</table>
+    ${tpl.showClient && sale.clientIdNumber ? `<p>Cédula: ${escapeHtml(sale.clientIdNumber)}</p>` : ""}
+    ${tpl.showClient && sale.clientAddress ? `<p>Dirección: ${escapeHtml(sale.clientAddress)}</p>` : ""}
     <div class="line"></div>
     <table>
-      <tr class="tot"><td>TOTAL</td><td style="text-align:right">${fmt(sale.total)}</td></tr>
-      ${tpl.showPayment ? `<tr><td>Pago (${escapeHtml(paymentText)})</td><td style="text-align:right">${fmt(sale.paid)}</td></tr>` : ""}
-      ${tpl.showChange ? `<tr><td>Cambio</td><td style="text-align:right">${fmt(sale.change)}</td></tr>` : ""}
+      <tr><th>Cant</th><th>Producto</th><th class="r">Total</th></tr>
+      ${rows}
+    </table>
+    <div class="line"></div>
+    <table>
+      <tr class="tot"><td>TOTAL</td><td class="r">${fmt(sale.total)}</td></tr>
+      ${tpl.showPayment ? `<tr><td>Pago (${escapeHtml(paymentText)})</td><td class="r">${fmt(sale.paid)}</td></tr>` : ""}
+      ${tpl.showChange ? `<tr><td>Cambio</td><td class="r">${fmt(sale.change)}</td></tr>` : ""}
     </table>
     <div class="line"></div>
     ${tpl.footer ? `<p>${escapeHtml(tpl.footer)}</p>` : ""}
@@ -470,6 +509,9 @@ const navItems: { id: Module; label: string }[] = [
   { id: "cierre", label: "Cierre de caja" },
   { id: "creditos", label: "Ventas a crédito" },
   { id: "usuarios", label: "Usuarios" },
+  { id: "licencias", label: "Software" },
+  { id: "caja", label: "Caja" },
+  { id: "descarga", label: "Descargar POS" },
   { id: "integraciones", label: "Configuración" },
 ];
 
@@ -486,6 +528,9 @@ function NavIcon({ id }: { id: Module }) {
     creditos: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16v10H4V7Zm0 3h16M8 15h3" /></svg>,
     integraciones: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-.5.9 1.6a1.8 1.8 0 0 1-1.9 2.6l-1.8-.5a7 7 0 0 1-1.2.7l-.3 1.9a1.8 1.8 0 0 1-3.5 0l-.3-1.9a7 7 0 0 1-1.2-.7l-1.8.5a1.8 1.8 0 0 1-1.9-2.6l.9-1.6a7 7 0 0 1 0-1.4l-.9-1.6a1.8 1.8 0 0 1 1.9-2.6l1.8.5a7 7 0 0 1 1.2-.7l.3-1.9a1.8 1.8 0 0 1 3.5 0l.3 1.9a7 7 0 0 1 1.2.7l1.8-.5a1.8 1.8 0 0 1 1.9 2.6l-.9 1.6a7 7 0 0 1 0 1.4Z" /></svg>,
     usuarios: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM8 13a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm0 2c-3 0-5 1.8-5 4v1h10v-1c0-2.2-2-4-5-4Zm8 0c-.7 0-1.4.1-2 .4 1.5.9 2.5 2.3 2.5 4v.6H21v-.6c0-2.2-1.8-4.4-5-4.4Z" /></svg>,
+    licencias: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-8 8h14V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v14Zm8-4h.01" /></svg>,
+    caja: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16v10H4V7Zm0 4h16M8 15h4" /></svg>,
+    descarga: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v10m0 0 3.5-3.5M12 14 8.5 10.5M5 18h14" /></svg>,
   };
   return icons[id];
 }
@@ -506,8 +551,8 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
             <div className={collapsed ? "lg:hidden" : ""}>
               <p className="font-display text-sm font-bold leading-tight">Promethixia</p>
               <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">Punto de venta</p>
-            </div>
           </div>
+        </div>
           <button
             type="button"
             onClick={onToggle}
@@ -522,7 +567,7 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
                 : <path strokeLinecap="round" strokeLinejoin="round" d="M15 5l-7 7 7 7" />}
             </svg>
           </button>
-        </div>
+      </div>
       </div>
       <nav className={`relative z-10 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-3 ${collapsed ? "lg:px-2" : ""}`}>
         {items.map(item => (
@@ -551,8 +596,8 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
           </span>
           <div className={collapsed ? "lg:hidden" : ""}>
             <ThemeToggle tone="navy" />
-          </div>
         </div>
+      </div>
         <div className={`rounded-2xl border border-white/15 bg-white/8 p-3 text-xs text-blue-100 backdrop-blur-md ${collapsed ? "lg:grid lg:size-10 lg:place-items-center lg:p-0" : ""}`} title={email}>
           {collapsed ? (
             <span className="hidden text-sm font-bold text-white lg:inline">{email.slice(0, 1).toUpperCase()}</span>
@@ -560,8 +605,8 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
           <div className={collapsed ? "lg:hidden" : ""}>
             <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-cyan-300">Sesión</p>
             <p className="truncate font-semibold text-white">{email}</p>
-          </div>
-        </div>
+      </div>
+      </div>
         <button
           type="button"
           onClick={onLogout}
@@ -572,9 +617,9 @@ function Sidebar({ active, onNav, email, onLogout, open, collapsed, onToggle, it
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H4m11 0-3-3m3 3-3 3M10 5h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-7" />
           </svg>
           <span className={collapsed ? "lg:hidden" : ""}>Cerrar sesión</span>
-        </button>
-      </div>
-      </div>
+                </button>
+            </div>
+          </div>
     </aside>
   );
 }
@@ -651,7 +696,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
         : [...products, normalized]);
       setCategories(await api<Category[]>("/categories"));
       setMovements(await api<InventoryMovement[]>("/inventory/movements"));
-      setShowModal(false);
+    setShowModal(false);
       setEditing(null);
       setForm(emptyForm);
     } catch (err) {
@@ -769,7 +814,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
             <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
             <Button onClick={openCreate}>+ Agregar producto</Button>
-          </div>
+        </div>
         }
       />
 
@@ -777,7 +822,7 @@ function Productos({ products, setProducts, categories, setCategories, movements
         <div className="bg-blue-50 text-blue-700 rounded-xl px-4 py-3 text-sm flex justify-between items-center">
           <span>{importMsg}</span>
           <button onClick={() => setImportMsg(null)} className="text-blue-500 hover:text-blue-800">Cerrar</button>
-        </div>
+      </div>
       )}
 
       <div className="flex gap-3 flex-wrap">
@@ -1719,13 +1764,14 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         }),
       });
       const code = saved.ticket;
-      const clientName = clientId ? clients.find(c => c.id === clientId)?.name : undefined;
+      const client = clientId ? clients.find(c => c.id === clientId) : undefined;
       const sale: SaleReceipt = {
         code,
         items: cart.map(i => ({
           name: i.product.name,
           qty: i.qty,
           weight: i.weight,
+          unitPrice: i.product.sellPrice,
           lineTotal: i.product.sellPrice * i.qty,
           imei: productRequiresImei(i.product)
             ? (checkoutImeis[i.product.id] ?? []).slice(0, phoneUnits(i.qty)).map(imeiPairText).filter(Boolean).join(" ; ")
@@ -1735,7 +1781,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         paid: paidNum,
         change,
         payment,
-        clientName,
+        clientName: client?.name,
+        clientIdNumber: client?.idNumber || undefined,
+        clientAddress: client?.address || undefined,
         printed: withPrint,
       };
       if (payment === "efectivo" || (payment === "mixto" && (amounts?.efectivo || 0) > 0)) openCashDrawer();
@@ -1761,9 +1809,13 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         <p className="text-slate-500 text-sm mb-4">Ticket #{lastSale.code}</p>
         <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-600 mb-3 space-y-1.5 text-left">
           {lastSale.items.map((item, index) => (
-            item.imei ? (
-              <p key={`${item.name}-${index}`} className="text-xs text-slate-500">{formatStoredImei(item.imei)}</p>
-            ) : null
+            <div key={`${item.name}-${index}`} className="border-b border-slate-100 pb-1.5 last:border-0">
+              <div className="flex justify-between gap-3">
+                <span>{item.qty} × {item.name}</span>
+                <span className="font-semibold">{fmt(item.lineTotal)}</span>
+              </div>
+              {item.imei ? <p className="text-xs text-slate-500">{formatStoredImei(item.imei)}</p> : null}
+            </div>
           ))}
           <div className="flex justify-between"><span>Total</span><span className="font-semibold">{fmt(lastSale.total)}</span></div>
           <div className="flex justify-between"><span>Pagó</span><span>{fmt(lastSale.paid)}</span></div>
@@ -2326,6 +2378,78 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
 
 const peripheralIcons: Record<string, string> = { barcode: "▥", scale: "⊖", printer: "⊟", drawer: "▣", dian: "◫" };
 
+function TicketFields({ ticket, setTicket }: { ticket: TicketTemplate; setTicket: (next: TicketTemplate) => void }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <Input
+        label="Nombre del local o empresa"
+        value={ticket.storeName}
+        onChange={e => setTicket({ ...ticket, storeName: e.target.value })}
+        placeholder="Ej. CELU CENTRO ACCESORIOS"
+      />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Input
+          label="NIT"
+          value={ticket.nitLine}
+          onChange={e => setTicket({ ...ticket, nitLine: e.target.value })}
+          placeholder="NIT 900.123.456-1"
+        />
+        <Input
+          label="Teléfono"
+          value={ticket.phone}
+          onChange={e => setTicket({ ...ticket, phone: e.target.value })}
+          placeholder="312 275 4222"
+        />
+        <Input
+          label="Dirección"
+          value={ticket.address}
+          onChange={e => setTicket({ ...ticket, address: e.target.value })}
+          placeholder="Calle 18 # 14-26"
+        />
+        <Input
+          label="Ciudad"
+          value={ticket.city}
+          onChange={e => setTicket({ ...ticket, city: e.target.value })}
+          placeholder="Armenia, Quindío"
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-semibold text-navy-900">Texto extra del encabezado</label>
+        <textarea
+          value={ticket.extraHeader}
+          onChange={e => setTicket({ ...ticket, extraHeader: e.target.value })}
+          rows={2}
+          placeholder="Resolución DIAN u otras líneas opcionales"
+          className="rounded-xl border border-slate-200 bg-[var(--surface)] px-3.5 py-2.5 text-sm text-navy-900 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15"
+        />
+      </div>
+      <Input
+        label="Pie de página"
+        value={ticket.footer}
+        onChange={e => setTicket({ ...ticket, footer: e.target.value })}
+      />
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {([
+          ["showDate", "Mostrar fecha/hora de la venta"],
+          ["showClient", "Mostrar cliente"],
+          ["showPayment", "Mostrar método de pago"],
+          ["showChange", "Mostrar cambio"],
+          ["showReprint", "Mostrar etiqueta REIMPRESIÓN"],
+        ] as const).map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={ticket[key]}
+              onChange={e => setTicket({ ...ticket, [key]: e.target.checked })}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Integraciones() {
   const [state, setState] = useState<IntegrationsState | null>(null);
   const [ticket, setTicket] = useState<TicketTemplate>(readTicketTemplate);
@@ -2383,12 +2507,17 @@ function Integraciones() {
     writeTicketTemplate(ticket);
     printSaleTicket({
       code: "VTA-000000",
-      items: [{ name: "Producto de ejemplo", qty: 1, lineTotal: 10000 }],
-      total: 10000,
-      paid: 10000,
+      items: [
+        { name: "Celular Samsung A07", qty: 1, unitPrice: 450000, lineTotal: 450000, imei: "351234567890123" },
+        { name: "Cable USB", qty: 1, unitPrice: 10000, lineTotal: 10000 },
+      ],
+      total: 460000,
+      paid: 460000,
       change: 0,
       payment: "efectivo",
       clientName: "Cliente de prueba",
+      clientIdNumber: "1.094.880.820",
+      clientAddress: "Calle 18 # 14-26",
       printed: true,
       soldAt: new Date().toISOString(),
       reprint: true,
@@ -2468,7 +2597,14 @@ function Integraciones() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input label="NIT empresa" value={state.dian.nit} onChange={e => setState({ ...state, dian: { ...state.dian, nit: e.target.value } })} />
           <Input label="Software ID" value={state.dian.softwareId} onChange={e => setState({ ...state, dian: { ...state.dian, softwareId: e.target.value } })} />
-          <Input label="PIN de software" type="password" value={state.dian.softwarePin} onChange={e => setState({ ...state, dian: { ...state.dian, softwarePin: e.target.value } })} />
+          <Input
+            label="PIN de software"
+            type="password"
+            autoComplete="new-password"
+            placeholder={state.dian.softwarePinSet ? "PIN guardado — escribe uno nuevo para cambiarlo" : ""}
+            value={state.dian.softwarePin}
+            onChange={e => setState({ ...state, dian: { ...state.dian, softwarePin: e.target.value } })}
+          />
           <Select label="Ambiente" value={state.dian.environment} onChange={e => setState({ ...state, dian: { ...state.dian, environment: e.target.value } })}><option>Producción</option><option>Habilitación / Pruebas</option></Select>
         </div>
         <div className="mt-4 p-3 bg-emerald-50 rounded-xl flex items-center gap-3">
@@ -2479,58 +2615,15 @@ function Integraciones() {
       </Card>
 
       {showTicketModal && (
-        <Modal title="Campos del ticket de venta" onClose={() => setShowTicketModal(false)}>
-          <div className="flex flex-col gap-4">
-            <Input
-              label="Nombre del negocio"
-              value={ticket.storeName}
-              onChange={e => setTicket({ ...ticket, storeName: e.target.value })}
-              placeholder="Nombre de tu negocio"
-            />
-            <Input
-              label="Línea de NIT / ciudad"
-              value={ticket.nitLine}
-              onChange={e => setTicket({ ...ticket, nitLine: e.target.value })}
-              placeholder="NIT 900.123.456-1 · Cali"
-            />
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold text-navy-900">Texto extra del encabezado</label>
-              <textarea
-                value={ticket.extraHeader}
-                onChange={e => setTicket({ ...ticket, extraHeader: e.target.value })}
-                rows={3}
-                placeholder="Dirección, teléfono, resolución DIAN…"
-                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-navy-900 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15"
-              />
-            </div>
-            <Input
-              label="Pie de página"
-              value={ticket.footer}
-              onChange={e => setTicket({ ...ticket, footer: e.target.value })}
-            />
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {([
-                ["showDate", "Mostrar fecha/hora de la venta"],
-                ["showClient", "Mostrar cliente"],
-                ["showPayment", "Mostrar método de pago"],
-                ["showChange", "Mostrar cambio"],
-                ["showReprint", "Mostrar etiqueta REIMPRESIÓN"],
-              ] as const).map(([key, label]) => (
-                <label key={key} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={ticket[key]}
-                    onChange={e => setTicket({ ...ticket, [key]: e.target.checked })}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-slate-500">
-              La fecha de la esquina superior es del navegador. Al imprimir usamos márgenes en cero para ocultarla;
-              si sigue visible, desactiva “Encabezados y pies de página” en el diálogo de impresión.
-            </p>
-          </div>
+        <Modal title="Datos del local y factura" onClose={() => setShowTicketModal(false)}>
+          <p className="mb-4 text-xs text-slate-500">
+            Este nombre y estos datos salen en cada factura de venta: productos, precios e IMEI de celulares.
+          </p>
+          <TicketFields ticket={ticket} setTicket={setTicket} />
+          <p className="mt-4 text-xs text-slate-500">
+            La fecha de la esquina superior es del navegador. Al imprimir usamos márgenes en cero para ocultarla;
+            si sigue visible, desactiva “Encabezados y pies de página” en el diálogo de impresión.
+          </p>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <Button className="flex-1" onClick={() => { void saveTicket(); }}>Guardar plantilla</Button>
             <Button variant="secondary" className="flex-1" onClick={previewTicket}>Vista previa</Button>
@@ -2553,6 +2646,7 @@ interface AccountUser {
   plan_label?: string;
   plan_expires_at?: string | null;
   subscription_status?: string;
+  desktop_download?: boolean;
   created_at: string;
 }
 
@@ -2598,6 +2692,7 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const isAdmin = role === "admin";
 
   const loadUsers = async () => {
@@ -2627,6 +2722,19 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
       setShowModal(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No pudimos crear el usuario.");
+    }
+  };
+
+  const toggleDesktop = async (user: AccountUser) => {
+    setError("");
+    try {
+      const updated = await api<AccountUser>(`/users/${user.id}/desktop`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !user.desktop_download }),
+      });
+      setUsers(users.map(item => item.id === updated.id ? updated : item));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No pudimos cambiar la descarga del POS.");
     }
   };
 
@@ -2696,6 +2804,38 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
     event.preventDefault();
   };
 
+  const downloadDesktop = async (user: AccountUser) => {
+    setError("");
+    setDownloadingId(user.id);
+    try {
+      const response = await fetch(`${API_URL}/desktop/${user.id}/installer`, {
+        credentials: "include",
+        headers: authHeaders(),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        const detail = data && typeof data === "object" ? (data as { detail?: unknown }).detail : null;
+        throw new ApiError(typeof detail === "string" ? detail : "No pudimos descargar el POS de escritorio.");
+      }
+      const blob = await response.blob();
+      const header = response.headers.get("Content-Disposition") || "";
+      const match = header.match(/filename="?([^"]+)"?/i);
+      const filename = match?.[1] || `Promethixia-POS-${user.email.split("@")[0]}.exe`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No pudimos descargar el POS de escritorio.");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   const changeRole = async (user: AccountUser, nextRole: UserRole) => {
     setError("");
     try {
@@ -2714,7 +2854,7 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
       <PageHeader
         title={isAdmin ? "Negocios" : "Usuarios del negocio"}
         subtitle={isAdmin
-          ? "Prueba gratis dura 15 días. Mensual dura 30. Libre es una cuenta vieja: no se vence hasta que le pongas un plan."
+          ? "Prueba gratis dura 15 días. Mensual dura 30. Con “Mostrar en su menú” ese negocio ve Descargar POS al entrar."
           : "Crea personas de tu equipo y asígnales el rol con el que van a entrar."}
         actions={<Button onClick={() => { setError(""); setShowModal(true); }}>{isAdmin ? "+ Crear negocio" : "+ Crear usuario"}</Button>}
       />
@@ -2761,12 +2901,31 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
                       <p className={`font-medium ${block.hint === "Ya bloqueada" ? "text-rose-700" : "text-slate-700"}`}>{block.date}</p>
                       {block.hint && <p className={`mt-0.5 text-xs ${block.hint === "Ya bloqueada" ? "text-rose-600" : "text-slate-500"}`}>{block.hint}</p>}
                     </td>
-                    <td className="px-4 py-3"><Badge color={access.color}>{access.label}</Badge></td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <Badge color={access.color}>{access.label}</Badge>
+                        {user.role === "owner" && (
+                          <Badge color={user.desktop_download ? "green" : "gray"}>
+                            {user.desktop_download ? "Puede descargar POS" : "Sin descarga POS"}
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex flex-wrap justify-end gap-2">
                         {user.role === "owner" && (
                           <Button size="sm" variant={user.subscription_status === "vencido" ? "primary" : "secondary"} onClick={() => { void renewPlan(user); }}>
                             {user.plan === "monthly" ? "Renovar un mes" : user.plan === "trial" ? "Activar plan mensual" : "Poner plan mensual"}
+                          </Button>
+                        )}
+                        {user.role === "owner" && (
+                          <Button size="sm" variant={user.desktop_download ? "secondary" : "primary"} onClick={() => { void toggleDesktop(user); }}>
+                            {user.desktop_download ? "Quitar del menú" : "Mostrar en su menú"}
+                          </Button>
+                        )}
+                        {user.role === "owner" && user.desktop_download && (
+                          <Button size="sm" variant="secondary" disabled={downloadingId === user.id} onClick={() => { void downloadDesktop(user); }}>
+                            {downloadingId === user.id ? "Descargando…" : "Descargar .exe"}
                           </Button>
                         )}
                         {canDelete(user) && (
@@ -2946,6 +3105,15 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
 
+function KeepAlive({ show, children }: { show: boolean; children: ReactNode }) {
+  const [seen, setSeen] = useState(show);
+  useEffect(() => {
+    if (show) setSeen(true);
+  }, [show]);
+  if (!seen) return null;
+  return <div className={show ? "" : "hidden"}>{children}</div>;
+}
+
 export default function App() {
   const [module, setModule] = useState<Module>("dashboard");
   const [products, setProducts] = useState<Product[]>([]);
@@ -2956,6 +3124,7 @@ export default function App() {
   const [stats, setStats] = useState<DashboardStats>(emptyStats);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [sessionRole, setSessionRole] = useState<UserRole>("owner");
+  const [sessionDesktopDownload, setSessionDesktopDownload] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(() => {
@@ -2979,6 +3148,7 @@ export default function App() {
       .then((session) => {
         setSessionEmail(session?.user.email ?? null);
         setSessionRole(session?.user.role ?? "owner");
+        setSessionDesktopDownload(Boolean(session?.user.desktopDownload));
       })
       .finally(() => setAuthReady(true));
   }, []);
@@ -2998,23 +3168,18 @@ export default function App() {
     bindTicketCache(sessionEmail);
     bindProductSettings(sessionEmail);
     if (sessionRole === "admin") return;
-    Promise.all([
-      api<Product[]>("/products"),
-      api<Client[]>("/clients"),
-      api<Supplier[]>("/suppliers"),
-      api<DashboardStats>("/dashboard"),
-      api<Category[]>("/categories"),
-      api<InventoryMovement[]>("/inventory/movements"),
-      api<IntegrationsState>("/integrations"),
-    ]).then(([nextProducts, nextClients, nextSuppliers, nextStats, nextCategories, nextMovements, integrations]) => {
-      setProducts(normalizeProducts(nextProducts));
-      setClients(nextClients);
-      setSuppliers(nextSuppliers);
-      setStats(nextStats);
-      setCategories(nextCategories);
-      setMovements(nextMovements);
+    const load = <T,>(path: string, apply: (value: T) => void) => {
+      void api<T>(path).then(apply).catch(() => undefined);
+    };
+    load<Product[]>("/products", next => setProducts(normalizeProducts(next)));
+    load<Client[]>("/clients", setClients);
+    load<DashboardStats>("/dashboard", setStats);
+    load<Category[]>("/categories", setCategories);
+    load<Supplier[]>("/suppliers", setSuppliers);
+    load<InventoryMovement[]>("/inventory/movements?limit=80", setMovements);
+    load<IntegrationsState>("/integrations", integrations => {
       if (integrations.ticket) writeTicketTemplate(integrations.ticket);
-    }).catch(() => undefined);
+    });
   }, [sessionEmail, sessionRole]);
 
   useEffect(() => {
@@ -3023,7 +3188,7 @@ export default function App() {
   }, [sessionEmail, module]);
 
   if (!authReady) {
-    return (
+  return (
       <div className="mesh-navy grid min-h-dvh place-items-center">
         <img src="/brand/promethixia-mark.svg" alt="" width={72} height={72} className="size-16 animate-shimmer drop-shadow-[0_12px_28px_rgba(59,130,246,0.45)]" />
       </div>
@@ -3033,17 +3198,23 @@ export default function App() {
   if (!sessionEmail) {
     return (
       <LoginScreen
-        onSuccess={(email, role) => {
+        onSuccess={(email, role, desktopDownload) => {
           setSessionEmail(email);
           setSessionRole(role);
+          setSessionDesktopDownload(desktopDownload);
           setModule(role === "admin" ? "usuarios" : "dashboard");
         }}
       />
     );
   }
 
-  const allowedModules = modulesForRole(sessionRole);
-  const visibleNav = navItems.filter(item => allowedModules.includes(item.id));
+  const allowedModules = [
+    ...modulesForRole(sessionRole),
+    ...(sessionDesktopDownload ? (["descarga"] as const) : []),
+  ];
+  const visibleNav = navItems
+    .filter(item => allowedModules.includes(item.id))
+    .map(item => (sessionRole === "admin" && item.id === "usuarios" ? { ...item, label: "Negocios" } : item));
   const activeModule = visibleNav.some(item => item.id === module) ? module : (visibleNav[0]?.id ?? "dashboard");
   const moduleLabel = visibleNav.find(item => item.id === activeModule)?.label ?? "Promethixia";
 
@@ -3066,6 +3237,7 @@ export default function App() {
             bindProductSettings("");
             setSessionEmail(null);
             setSessionRole("owner");
+            setSessionDesktopDownload(false);
           });
         }}
       />
@@ -3093,31 +3265,31 @@ export default function App() {
           </div>
           <ThemeToggle compact />
         </div>
-        <div key={`${sessionEmail}:${activeModule}`} className="animate-rise">
+        <div key={sessionEmail} className="animate-rise">
         <Suspense fallback={<ScreenFallback />}>
-        {activeModule === "dashboard" && <Dashboard stats={stats} />}
-        {activeModule === "productos" && (
+        <KeepAlive show={activeModule === "dashboard"}><Dashboard stats={stats} /></KeepAlive>
+        <KeepAlive show={activeModule === "productos"}>
           <Productos
             products={products} setProducts={setProducts}
             categories={categories} setCategories={setCategories}
             movements={movements} setMovements={setMovements}
           />
-        )}
-        {activeModule === "inventario" && (
+        </KeepAlive>
+        <KeepAlive show={activeModule === "inventario"}>
           <Inventario
             products={products} setProducts={setProducts}
             movements={movements} setMovements={setMovements}
           />
-        )}
-        {activeModule === "clientes" && <Clientes clients={clients} setClients={setClients} />}
-        {activeModule === "proveedores" && (
+        </KeepAlive>
+        <KeepAlive show={activeModule === "clientes"}><Clientes clients={clients} setClients={setClients} /></KeepAlive>
+        <KeepAlive show={activeModule === "proveedores"}>
           <Proveedores
             suppliers={suppliers} setSuppliers={setSuppliers}
             products={products} setProducts={setProducts}
             movements={movements} setMovements={setMovements}
           />
-        )}
-        {activeModule === "ventas" && (
+        </KeepAlive>
+        <KeepAlive show={activeModule === "ventas"}>
           <Ventas
             products={products} setProducts={setProducts}
             clients={clients} setClients={setClients}
@@ -3127,11 +3299,18 @@ export default function App() {
               setModule("integraciones");
             } : undefined}
           />
-        )}
-        {activeModule === "cierre" && <CierreCaja />}
-        {activeModule === "creditos" && <Creditos />}
-        {activeModule === "integraciones" && <Integraciones />}
-        {activeModule === "usuarios" && <Usuarios role={sessionRole} sessionEmail={sessionEmail} />}
+        </KeepAlive>
+        <KeepAlive show={activeModule === "cierre"}><CierreCaja /></KeepAlive>
+        <KeepAlive show={activeModule === "creditos"}><Creditos /></KeepAlive>
+        <KeepAlive show={activeModule === "integraciones"}><Integraciones /></KeepAlive>
+        <KeepAlive show={activeModule === "usuarios"}>
+          {sessionRole === "admin"
+            ? <Negocios sessionEmail={sessionEmail} />
+            : <Usuarios role={sessionRole} sessionEmail={sessionEmail} />}
+        </KeepAlive>
+        <KeepAlive show={activeModule === "licencias"}><Software /></KeepAlive>
+        <KeepAlive show={activeModule === "caja"}><Caja /></KeepAlive>
+        <KeepAlive show={activeModule === "descarga"}><DescargarPos /></KeepAlive>
         </Suspense>
         </div>
       </main>
