@@ -78,11 +78,12 @@ export function CrearLicenciaModal({
         />
         <p className="text-xs text-slate-500">Ese código sale en la pantalla “Active su licencia”. La licencia solo sirve en ese computador.</p>
         <Input
-          label="Actualizaciones hasta"
+          label="Licencia válida hasta"
           type="date"
           value={form.hasta}
           onChange={(event) => setForm({ ...form, hasta: event.target.value })}
         />
+        <p className="text-xs text-slate-500">Por defecto 1 año. Eso vive en el .lic, no en la descarga del programa.</p>
         {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
       <div className="mt-5 flex justify-end gap-2">
@@ -160,11 +161,12 @@ export function Licencias() {
           />
           <p className="text-xs text-slate-500">Cópialo de la pantalla roja del POS. Ejemplo: 00E8-B682-7EC7-9CEC</p>
           <Input
-            label="Actualizaciones hasta"
+            label="Licencia válida hasta"
             type="date"
             value={form.hasta}
             onChange={(event) => setForm({ ...form, hasta: event.target.value })}
           />
+          <p className="text-xs text-slate-500">Por defecto 1 año. La descarga del aplicativo no usa esta fecha.</p>
           <div>
             <Button disabled={!puedeCrear} onClick={() => { void crear(); }}>
               {saving ? "Creando…" : "Crear y descargar .lic"}

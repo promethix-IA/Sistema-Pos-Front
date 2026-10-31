@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../../lib/api";
-import { downloadAuthenticated } from "../../lib/download";
+import { downloadDesktopInstaller } from "../../lib/download";
 import { roleLabel } from "../../lib/auth";
 import { Badge, Button, Card, Input, Modal, PageHeader, Select } from "../../ui";
 import { CrearLicenciaModal } from "../licencias/Licencias";
@@ -92,20 +92,6 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
     await patchDesktop(user, { channel }, `Windows de ${user.email}: ${channel === "windows7-8" ? "7/8" : "10/11"}.`);
   };
 
-  const saveUpdatesUntil = async (user: AccountUser, updatesUntil: string) => {
-    await patchDesktop(
-      user,
-      { updates_until: updatesUntil },
-      updatesUntil
-        ? `Actualizaciones de ${user.email} hasta ${formatAdminDay(updatesUntil)}. Luego crea un .lic nuevo con esa fecha.`
-        : `Quitamos la fecha de actualizaciones de ${user.email}.`,
-    );
-  };
-
-  const renewUpdates = async (user: AccountUser) => {
-    await saveUpdatesUntil(user, inOneYear());
-  };
-
   const renewPlan = async (user: AccountUser) => {
     setError("");
     try {
@@ -175,10 +161,7 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
     setDownloadingId(`${user.id}:${channel}`);
     try {
       const etiqueta = channel === "windows7-8" ? "Windows7-8" : "Windows10-11";
-      await downloadAuthenticated(
-        `/desktop/${user.id}/installer?channel=${channel}`,
-        `Promethixia-POS-${user.email.split("@")[0]}-${etiqueta}.exe`,
-      );
+      await downloadDesktopInstaller(channel, user.id);
       setNotice(`Instalador ${etiqueta} listo para ${user.email}.`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No pudimos descargar el POS de escritorio.");
@@ -194,7 +177,7 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
     <div className="flex flex-col gap-5 p-4 sm:p-6">
       <PageHeader
         title="Configuración de negocios"
-        subtitle="Activa la descarga, elige el Windows del negocio, pon hasta cuándo pagó actualizaciones y envíale el .lic."
+        subtitle="Activa la descarga, elige el Windows del negocio y envíale el .lic de 1 año. La fecha va solo en la licencia, no en la descarga."
         actions={<Button onClick={() => { setError(""); setShowModal(true); }}>+ Crear negocio</Button>}
       />
 
@@ -205,7 +188,7 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
             <span className="font-bold text-brand-700">1.</span> Activa el interruptor para que vean “Descargar POS” y elige si su computador es Windows 10/11 o 7/8.
           </li>
           <li className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <span className="font-bold text-brand-700">2.</span> Cuando paguen actualizaciones, pon la fecha o pulsa “Renovar 1 año”. Luego crea un .lic nuevo.
+            <span className="font-bold text-brand-700">2.</span> Crea el .lic de 1 año con el código del computador. Ese archivo es la vigencia; la descarga no pide fecha.
           </li>
           <li className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <span className="font-bold text-brand-700">3.</span> El cliente entra al POS en el navegador, baja el instalador y lo ejecuta encima. Los datos no se borran.
@@ -271,7 +254,7 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
                       <span className={`absolute top-0.5 size-6 rounded-full bg-white shadow transition-transform ${user.desktop_download ? "left-5" : "left-0.5"}`} />
                     </button>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="mt-3 max-w-sm">
                     <Select
                       label="Windows del negocio"
                       value={user.desktop_channel === "windows7-8" ? "windows7-8" : "windows10-11"}
@@ -281,18 +264,8 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
                       <option value="windows10-11">Windows 10 u 11</option>
                       <option value="windows7-8">Windows 7, 8 u 8.1</option>
                     </Select>
-                    <Input
-                      label="Actualizaciones pagadas hasta"
-                      type="date"
-                      value={user.desktop_updates_until || ""}
-                      disabled={togglingId === user.id}
-                      onChange={(event) => { void saveUpdatesUntil(user, event.target.value); }}
-                    />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Button size="sm" variant="secondary" disabled={togglingId === user.id} onClick={() => { void renewUpdates(user); }}>
-                      Renovar actualizaciones 1 año
-                    </Button>
                     <Button size="sm" variant="secondary" disabled={downloadingId === `${user.id}:windows10-11`} onClick={() => { void downloadDesktop(user, "windows10-11"); }}>
                       {downloadingId === `${user.id}:windows10-11` ? "Descargando…" : "Windows 10/11"}
                     </Button>
@@ -333,7 +306,7 @@ export function Negocios({ sessionEmail }: { sessionEmail: string }) {
       {licenseFor && (
         <CrearLicenciaModal
           initialCliente={licenseFor.email.split("@")[0] || licenseFor.email}
-          initialHasta={licenseFor.desktop_updates_until || ""}
+          initialHasta={inOneYear()}
           onClose={() => setLicenseFor(null)}
           onCreated={(filename) => {
             setNotice(`Se descargó ${filename}. No queda en el servidor: envíasela al cliente para “Active su licencia”.`);

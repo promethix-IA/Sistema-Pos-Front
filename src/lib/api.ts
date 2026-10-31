@@ -3,6 +3,15 @@ import { API_URL } from "./config";
 
 export class ApiError extends Error {}
 
+export function apiErrorMessage(detail: unknown, fallback = "No pudimos completar la solicitud."): string {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const first = detail.find((item) => item && typeof item === "object" && "msg" in item) as { msg?: string } | undefined;
+    if (typeof first?.msg === "string" && first.msg.trim()) return first.msg;
+  }
+  return fallback;
+}
+
 function expireSession(): void {
   void signOut();
   clearSession();
@@ -33,8 +42,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data && typeof data === "object" ? (data as { detail?: unknown }).detail : null;
-    const message = typeof detail === "string" ? detail : "No pudimos completar la solicitud.";
-    throw new ApiError(message);
+    throw new ApiError(apiErrorMessage(detail));
   }
   return data as T;
 }
