@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../../lib/api";
 import { downloadAuthenticatedPost } from "../../lib/download";
-import { Button, Card, Input, Modal, PageHeader, Select } from "../../ui";
+import { Button, Input, Modal, Select } from "../../ui";
 
 const EQUIPO = /^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/;
 
-type PeriodoLicencia = "mensual" | "trimestral" | "anual";
+export type PeriodoLicencia = "mensual" | "trimestral" | "anual";
 
 const PERIODOS: { id: PeriodoLicencia; meses: number; label: string }[] = [
   { id: "mensual", meses: 1, label: "Mensualidad (1 mes)" },
@@ -143,10 +143,16 @@ export function CrearLicenciaModal({
   );
 }
 
-export function Licencias() {
+export function FormularioLicencia({
+  initialCliente = "",
+  onCreated,
+}: {
+  initialCliente?: string;
+  onCreated?: (filename: string, periodo: PeriodoLicencia, hasta: string) => void;
+}) {
   const [ready, setReady] = useState(true);
   const [aviso, setAviso] = useState("");
-  const [form, setForm] = useState({ cliente: "", equipo: "", periodo: "anual" as PeriodoLicencia });
+  const [form, setForm] = useState({ cliente: initialCliente, equipo: "", periodo: "anual" as PeriodoLicencia });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -170,8 +176,10 @@ export function Licencias() {
     try {
       const periodo = form.periodo;
       const filename = await emitirLicencia(form.cliente, form.equipo, periodo);
-      setForm({ cliente: "", equipo: "", periodo: "anual" });
-      setNotice(`Se descargó ${filename} (${etiquetaPeriodo(periodo)} hasta ${formatearDia(hastaDe(periodo))}). Envíasela al cliente; no queda en el servidor.`);
+      const hasta = hastaDe(periodo);
+      setForm({ cliente: initialCliente, equipo: "", periodo: "anual" });
+      onCreated?.(filename, periodo, hasta);
+      setNotice(`Se descargó ${filename} (${etiquetaPeriodo(periodo)} hasta ${formatearDia(hasta)}). Envíasela al cliente; no queda en el servidor.`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No pudimos crear la licencia.");
     } finally {
@@ -180,11 +188,7 @@ export function Licencias() {
   };
 
   return (
-    <div className="flex flex-col gap-5 p-4 sm:p-6">
-      <PageHeader
-        title="Licencias de escritorio"
-        subtitle="Elige mensualidad, tres meses o anualidad. Esa fecha va en el .lic del aplicativo, no en la descarga."
-      />
+    <div className="flex flex-col gap-3">
       {!ready && (
         <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {aviso || "El servidor todavía no tiene la llave para firmar licencias."}
@@ -192,24 +196,19 @@ export function Licencias() {
       )}
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
-
-      <Card className="max-w-xl p-5">
-        <div className="flex flex-col gap-3">
-          <CamposLicencia
-            cliente={form.cliente}
-            equipo={form.equipo}
-            periodo={form.periodo}
-            onCliente={(cliente) => setForm({ ...form, cliente })}
-            onEquipo={(equipo) => setForm({ ...form, equipo })}
-            onPeriodo={(periodo) => setForm({ ...form, periodo })}
-          />
-          <div>
-            <Button disabled={!puedeCrear} onClick={() => { void crear(); }}>
-              {saving ? "Creando…" : "Crear y descargar .lic"}
-            </Button>
-          </div>
-        </div>
-      </Card>
+      <CamposLicencia
+        cliente={form.cliente}
+        equipo={form.equipo}
+        periodo={form.periodo}
+        onCliente={(cliente) => setForm({ ...form, cliente })}
+        onEquipo={(equipo) => setForm({ ...form, equipo })}
+        onPeriodo={(periodo) => setForm({ ...form, periodo })}
+      />
+      <div>
+        <Button disabled={!puedeCrear} onClick={() => { void crear(); }}>
+          {saving ? "Creando…" : "Crear y descargar .lic"}
+        </Button>
+      </div>
     </div>
   );
 }

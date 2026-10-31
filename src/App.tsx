@@ -6,7 +6,7 @@ import { Creditos } from "./components/Creditos";
 import { Negocios } from "./features/admin/Negocios";
 import { DescargarPos } from "./features/descarga/DescargarPos";
 import { Caja } from "./features/admin/Caja";
-import { Licencias } from "./features/licencias/Licencias";
+import { Software } from "./features/admin/Software";
 import { api, ApiError } from "./lib/api";
 import { fmt } from "./lib/money";
 import { API_URL } from "./lib/config";
@@ -482,7 +482,7 @@ const navItems: { id: Module; label: string }[] = [
   { id: "cierre", label: "Cierre de caja" },
   { id: "creditos", label: "Ventas a crédito" },
   { id: "usuarios", label: "Usuarios" },
-  { id: "licencias", label: "Licencias" },
+  { id: "licencias", label: "Software" },
   { id: "caja", label: "Caja" },
   { id: "descarga", label: "Descargar POS" },
   { id: "integraciones", label: "Configuración" },
@@ -3263,7 +3263,7 @@ export default function App() {
             ? <Negocios sessionEmail={sessionEmail} />
             : <Usuarios role={sessionRole} sessionEmail={sessionEmail} />}
         </KeepAlive>
-        <KeepAlive show={activeModule === "licencias"}><Licencias /></KeepAlive>
+        <KeepAlive show={activeModule === "licencias"}><Software /></KeepAlive>
         <KeepAlive show={activeModule === "caja"}><Caja /></KeepAlive>
         <KeepAlive show={activeModule === "descarga"}><DescargarPos /></KeepAlive>
         </Suspense>
