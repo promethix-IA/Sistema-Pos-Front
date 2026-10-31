@@ -45,23 +45,26 @@ export async function downloadAuthenticatedPost(path: string, body: unknown, fal
   return saveBlob(response, fallbackName);
 }
 
+const INSTALADORES_PUBLICOS: Record<string, string> = {
+  "windows10-11": "https://github.com/promethix-IA/promethixia-instaladores/releases/download/instalador-1.0.0/Promethixia-POS-Instalador-1.0.0-Windows10-11.exe",
+  "windows7-8": "https://github.com/promethix-IA/promethixia-instaladores/releases/download/instalador-1.0.0/Promethixia-POS-Instalador-1.0.0-Windows7-8.exe",
+};
+
 export async function downloadDesktopInstaller(channel: string, userId?: number): Promise<string> {
   const qs = `channel=${encodeURIComponent(channel)}`;
   const infoPath = userId != null ? `/desktop/${userId}/link?${qs}` : `/desktop/link?${qs}`;
   const info = await api<{ local: boolean; url: string; filename: string }>(infoPath);
-  if (info.local) {
-    const filePath = userId != null ? `/desktop/${userId}/installer?${qs}` : `/desktop/installer?${qs}`;
-    return downloadAuthenticated(filePath, info.filename);
+  const url = info.url || INSTALADORES_PUBLICOS[channel];
+  if (url) {
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      window.location.assign(url);
+    }
+    return info.filename;
   }
-  if (!info.url) {
+  if (!info.local) {
     throw new ApiError("Aún no está el instalador en el servidor.");
   }
-  const link = document.createElement("a");
-  link.href = info.url;
-  link.rel = "noopener";
-  link.target = "_blank";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  return info.filename;
+  const filePath = userId != null ? `/desktop/${userId}/installer?${qs}` : `/desktop/installer?${qs}`;
+  return downloadAuthenticated(filePath, info.filename);
 }
