@@ -15,6 +15,8 @@ export default defineConfig(({ mode }) => {
     build: {
       sourcemap: emitSourcemaps ? 'inline' : false,
       minify: !emitSourcemaps,
+      // Electron 22 (Windows 7/8) trae Chromium 108.
+      ...(process.env.VITE_ESCRITORIO_LEGADO === "1" ? { target: "chrome108" } : {}),
     },
     plugins: [
       react(),

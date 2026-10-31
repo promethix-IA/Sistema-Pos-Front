@@ -3,9 +3,14 @@ import { LoginScreen } from "./components/LoginScreen";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { CierreCaja } from "./components/CierreCaja";
 import { Creditos } from "./components/Creditos";
+import { Negocios } from "./features/admin/Negocios";
+import { DescargarPos } from "./features/descarga/DescargarPos";
+import { Caja } from "./features/admin/Caja";
+import { Licencias } from "./features/licencias/Licencias";
 import { api, ApiError } from "./lib/api";
 import { fmt } from "./lib/money";
-import { BUSINESS_ROLES, modulesForRole, restoreSession, roleLabel, signOut, type UserRole } from "./lib/auth";
+import { API_URL } from "./lib/config";
+import { authHeaders, BUSINESS_ROLES, modulesForRole, restoreSession, roleLabel, signOut, type UserRole } from "./lib/auth";
 import {
   bindProductSettings,
   normalizeProduct,
@@ -20,7 +25,7 @@ const Dashboard = lazy(() => import("./features/dashboard/Dashboard"));
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "cierre" | "creditos" | "integraciones" | "usuarios";
+type Module = "dashboard" | "productos" | "inventario" | "clientes" | "proveedores" | "ventas" | "cierre" | "creditos" | "integraciones" | "usuarios" | "licencias" | "caja" | "descarga";
 type PaymentMethod = "efectivo" | "tarjeta" | "transferencia" | "credito" | "mixto";
 
 type MovementType = "ENTRADA_COMPRA" | "SALIDA_VENTA" | "AJUSTE" | "ENTRADA_INICIAL" | "IMPORTACION" | "ENTRADA_DEVOLUCION";
@@ -477,6 +482,9 @@ const navItems: { id: Module; label: string }[] = [
   { id: "cierre", label: "Cierre de caja" },
   { id: "creditos", label: "Ventas a crédito" },
   { id: "usuarios", label: "Usuarios" },
+  { id: "licencias", label: "Licencias" },
+  { id: "caja", label: "Caja" },
+  { id: "descarga", label: "Descargar POS" },
   { id: "integraciones", label: "Configuración" },
 ];
 
@@ -493,6 +501,9 @@ function NavIcon({ id }: { id: Module }) {
     creditos: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16v10H4V7Zm0 3h16M8 15h3" /></svg>,
     integraciones: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-.5.9 1.6a1.8 1.8 0 0 1-1.9 2.6l-1.8-.5a7 7 0 0 1-1.2.7l-.3 1.9a1.8 1.8 0 0 1-3.5 0l-.3-1.9a7 7 0 0 1-1.2-.7l-1.8.5a1.8 1.8 0 0 1-1.9-2.6l.9-1.6a7 7 0 0 1 0-1.4l-.9-1.6a1.8 1.8 0 0 1 1.9-2.6l1.8.5a7 7 0 0 1 1.2-.7l.3-1.9a1.8 1.8 0 0 1 3.5 0l.3 1.9a7 7 0 0 1 1.2.7l1.8-.5a1.8 1.8 0 0 1 1.9 2.6l-.9 1.6a7 7 0 0 1 0 1.4Z" /></svg>,
     usuarios: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM8 13a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm0 2c-3 0-5 1.8-5 4v1h10v-1c0-2.2-2-4-5-4Zm8 0c-.7 0-1.4.1-2 .4 1.5.9 2.5 2.3 2.5 4v.6H21v-.6c0-2.2-1.8-4.4-5-4.4Z" /></svg>,
+    licencias: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-8 8h14V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v14Zm8-4h.01" /></svg>,
+    caja: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16v10H4V7Zm0 4h16M8 15h4" /></svg>,
+    descarga: <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v10m0 0 3.5-3.5M12 14 8.5 10.5M5 18h14" /></svg>,
   };
   return icons[id];
 }
@@ -2590,6 +2601,7 @@ interface AccountUser {
   plan_label?: string;
   plan_expires_at?: string | null;
   subscription_status?: string;
+  desktop_download?: boolean;
   created_at: string;
 }
 
@@ -2635,6 +2647,7 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const isAdmin = role === "admin";
 
   const loadUsers = async () => {
@@ -2664,6 +2677,19 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
       setShowModal(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No pudimos crear el usuario.");
+    }
+  };
+
+  const toggleDesktop = async (user: AccountUser) => {
+    setError("");
+    try {
+      const updated = await api<AccountUser>(`/users/${user.id}/desktop`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !user.desktop_download }),
+      });
+      setUsers(users.map(item => item.id === updated.id ? updated : item));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No pudimos cambiar la descarga del POS.");
     }
   };
 
@@ -2733,6 +2759,38 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
     event.preventDefault();
   };
 
+  const downloadDesktop = async (user: AccountUser) => {
+    setError("");
+    setDownloadingId(user.id);
+    try {
+      const response = await fetch(`${API_URL}/desktop/${user.id}/installer`, {
+        credentials: "include",
+        headers: authHeaders(),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        const detail = data && typeof data === "object" ? (data as { detail?: unknown }).detail : null;
+        throw new ApiError(typeof detail === "string" ? detail : "No pudimos descargar el POS de escritorio.");
+      }
+      const blob = await response.blob();
+      const header = response.headers.get("Content-Disposition") || "";
+      const match = header.match(/filename="?([^"]+)"?/i);
+      const filename = match?.[1] || `Promethixia-POS-${user.email.split("@")[0]}.exe`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No pudimos descargar el POS de escritorio.");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   const changeRole = async (user: AccountUser, nextRole: UserRole) => {
     setError("");
     try {
@@ -2751,7 +2809,7 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
       <PageHeader
         title={isAdmin ? "Negocios" : "Usuarios del negocio"}
         subtitle={isAdmin
-          ? "Prueba gratis dura 15 días. Mensual dura 30. Libre es una cuenta vieja: no se vence hasta que le pongas un plan."
+          ? "Prueba gratis dura 15 días. Mensual dura 30. Con “Mostrar en su menú” ese negocio ve Descargar POS al entrar."
           : "Crea personas de tu equipo y asígnales el rol con el que van a entrar."}
         actions={<Button onClick={() => { setError(""); setShowModal(true); }}>{isAdmin ? "+ Crear negocio" : "+ Crear usuario"}</Button>}
       />
@@ -2798,12 +2856,31 @@ function Usuarios({ role, sessionEmail }: { role: UserRole; sessionEmail: string
                       <p className={`font-medium ${block.hint === "Ya bloqueada" ? "text-rose-700" : "text-slate-700"}`}>{block.date}</p>
                       {block.hint && <p className={`mt-0.5 text-xs ${block.hint === "Ya bloqueada" ? "text-rose-600" : "text-slate-500"}`}>{block.hint}</p>}
                     </td>
-                    <td className="px-4 py-3"><Badge color={access.color}>{access.label}</Badge></td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <Badge color={access.color}>{access.label}</Badge>
+                        {user.role === "owner" && (
+                          <Badge color={user.desktop_download ? "green" : "gray"}>
+                            {user.desktop_download ? "Puede descargar POS" : "Sin descarga POS"}
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex flex-wrap justify-end gap-2">
                         {user.role === "owner" && (
                           <Button size="sm" variant={user.subscription_status === "vencido" ? "primary" : "secondary"} onClick={() => { void renewPlan(user); }}>
                             {user.plan === "monthly" ? "Renovar un mes" : user.plan === "trial" ? "Activar plan mensual" : "Poner plan mensual"}
+                          </Button>
+                        )}
+                        {user.role === "owner" && (
+                          <Button size="sm" variant={user.desktop_download ? "secondary" : "primary"} onClick={() => { void toggleDesktop(user); }}>
+                            {user.desktop_download ? "Quitar del menú" : "Mostrar en su menú"}
+                          </Button>
+                        )}
+                        {user.role === "owner" && user.desktop_download && (
+                          <Button size="sm" variant="secondary" disabled={downloadingId === user.id} onClick={() => { void downloadDesktop(user); }}>
+                            {downloadingId === user.id ? "Descargando…" : "Descargar .exe"}
                           </Button>
                         )}
                         {canDelete(user) && (
@@ -3002,6 +3079,7 @@ export default function App() {
   const [stats, setStats] = useState<DashboardStats>(emptyStats);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [sessionRole, setSessionRole] = useState<UserRole>("owner");
+  const [sessionDesktopDownload, setSessionDesktopDownload] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(() => {
@@ -3025,6 +3103,7 @@ export default function App() {
       .then((session) => {
         setSessionEmail(session?.user.email ?? null);
         setSessionRole(session?.user.role ?? "owner");
+        setSessionDesktopDownload(Boolean(session?.user.desktopDownload));
       })
       .finally(() => setAuthReady(true));
   }, []);
@@ -3074,17 +3153,23 @@ export default function App() {
   if (!sessionEmail) {
     return (
       <LoginScreen
-        onSuccess={(email, role) => {
+        onSuccess={(email, role, desktopDownload) => {
           setSessionEmail(email);
           setSessionRole(role);
+          setSessionDesktopDownload(desktopDownload);
           setModule(role === "admin" ? "usuarios" : "dashboard");
         }}
       />
     );
   }
 
-  const allowedModules = modulesForRole(sessionRole);
-  const visibleNav = navItems.filter(item => allowedModules.includes(item.id));
+  const allowedModules = [
+    ...modulesForRole(sessionRole),
+    ...(sessionDesktopDownload ? (["descarga"] as const) : []),
+  ];
+  const visibleNav = navItems
+    .filter(item => allowedModules.includes(item.id))
+    .map(item => (sessionRole === "admin" && item.id === "usuarios" ? { ...item, label: "Negocios" } : item));
   const activeModule = visibleNav.some(item => item.id === module) ? module : (visibleNav[0]?.id ?? "dashboard");
   const moduleLabel = visibleNav.find(item => item.id === activeModule)?.label ?? "Promethixia";
 
@@ -3107,6 +3192,7 @@ export default function App() {
             bindProductSettings("");
             setSessionEmail(null);
             setSessionRole("owner");
+            setSessionDesktopDownload(false);
           });
         }}
       />
@@ -3172,7 +3258,14 @@ export default function App() {
         <KeepAlive show={activeModule === "cierre"}><CierreCaja /></KeepAlive>
         <KeepAlive show={activeModule === "creditos"}><Creditos /></KeepAlive>
         <KeepAlive show={activeModule === "integraciones"}><Integraciones /></KeepAlive>
-        <KeepAlive show={activeModule === "usuarios"}><Usuarios role={sessionRole} sessionEmail={sessionEmail} /></KeepAlive>
+        <KeepAlive show={activeModule === "usuarios"}>
+          {sessionRole === "admin"
+            ? <Negocios sessionEmail={sessionEmail} />
+            : <Usuarios role={sessionRole} sessionEmail={sessionEmail} />}
+        </KeepAlive>
+        <KeepAlive show={activeModule === "licencias"}><Licencias /></KeepAlive>
+        <KeepAlive show={activeModule === "caja"}><Caja /></KeepAlive>
+        <KeepAlive show={activeModule === "descarga"}><DescargarPos /></KeepAlive>
         </Suspense>
         </div>
       </main>

@@ -27,7 +27,7 @@ function Logo({ tone = "dark", size = 36, textSize = "1.2rem" }: { tone?: "dark"
   );
 }
 
-export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: UserRole) => void }) {
+export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: UserRole, desktopDownload: boolean) => void }) {
   const year = new Date().getFullYear();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -56,7 +56,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: (email: string, role: Us
       return;
     }
 
-    onSuccess(result.email, result.role);
+    onSuccess(result.email, result.role, result.desktopDownload);
   }
 
   return (

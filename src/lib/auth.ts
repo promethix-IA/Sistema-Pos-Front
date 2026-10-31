@@ -34,7 +34,7 @@ const ALL_MODULES = [
 ] as const;
 
 const ROLE_MODULES: Record<UserRole, readonly string[]> = {
-  admin: ["usuarios"],
+  admin: ["usuarios", "licencias", "caja"],
   owner: ALL_MODULES,
   administrador: ALL_MODULES,
   cajero: ["dashboard", "ventas", "cierre", "creditos", "clientes"],
@@ -56,6 +56,7 @@ export function roleLabel(role: UserRole | string | undefined): string {
 export interface SignInResult {
   email: string | null;
   role: UserRole | null;
+  desktopDownload: boolean;
   error: string | null;
 }
 
@@ -152,17 +153,22 @@ export async function signIn(email: string, password: string, remember: boolean)
     body: JSON.stringify({ email, password, remember }),
   });
   if (!response.ok) {
-    return { email: null, role: null, error: await readError(response) };
+    return { email: null, role: null, desktopDownload: false, error: await readError(response) };
   }
   wipeLegacyTokenStorage();
-  const data = (await response.json()) as { user?: { email: string; role?: string } };
+  const data = (await response.json()) as { user?: { email: string; role?: string; desktop_download?: boolean } };
   if (!data.user?.email) {
-    return { email: null, role: null, error: "No pudimos iniciar sesión. Intenta de nuevo." };
+    return { email: null, role: null, desktopDownload: false, error: "No pudimos iniciar sesión. Intenta de nuevo." };
   }
-  return { email: data.user.email, role: asRole(data.user.role), error: null };
+  return {
+    email: data.user.email,
+    role: asRole(data.user.role),
+    desktopDownload: Boolean(data.user.desktop_download),
+    error: null,
+  };
 }
 
-export async function restoreSession(): Promise<{ user: { email: string; role: UserRole } } | null> {
+export async function restoreSession(): Promise<{ user: { email: string; role: UserRole; desktopDownload: boolean } } | null> {
   wipeLegacyTokenStorage();
   const response = await fetch(`${API_URL}/users/me`, {
     credentials: "include",
@@ -172,8 +178,8 @@ export async function restoreSession(): Promise<{ user: { email: string; role: U
     clearSession();
     return null;
   }
-  const user = (await response.json()) as { email: string; role?: string };
-  return { user: { email: user.email, role: asRole(user.role) } };
+  const user = (await response.json()) as { email: string; role?: string; desktop_download?: boolean };
+  return { user: { email: user.email, role: asRole(user.role), desktopDownload: Boolean(user.desktop_download) } };
 }
 
 /** El JWT ya no se guarda en el navegador; vive en una cookie httpOnly. */
