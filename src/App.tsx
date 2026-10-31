@@ -36,6 +36,7 @@ interface DaySaleItem {
   weight: number | null;
   unitPrice: number;
   lineTotal: number;
+  imei?: string;
 }
 
 interface DaySale {
@@ -216,6 +217,59 @@ const paymentLabel: Record<PaymentMethod, string> = {
   mixto: "Mixto",
 };
 
+function categoryRequiresImei(category: string) {
+  const name = category
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return ["celular", "telefono", "smartphone", "movil"].some(hint => name.includes(hint));
+}
+
+function productRequiresImei(product: { category?: string; name?: string }) {
+  return categoryRequiresImei(`${product.category ?? ""} ${product.name ?? ""}`);
+}
+
+type ImeiPair = { first: string; second: string };
+
+function emptyImeiPair(): ImeiPair {
+  return { first: "", second: "" };
+}
+
+function imeiDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function imeiPairText(pair: ImeiPair) {
+  const first = imeiDigits(pair.first);
+  if (!first) return "";
+  const second = imeiDigits(pair.second);
+  return second ? `${first} / ${second}` : first;
+}
+
+function formatStoredImei(value: string) {
+  return value
+    .split(";")
+    .map(group => group.trim())
+    .filter(Boolean)
+    .map(group => {
+      const [first, second] = group.split("/").map(part => part.trim()).filter(Boolean);
+      if (!first) return "";
+      return second ? `IMEI ${first} · IMEI 2 ${second}` : `IMEI ${first}`;
+    })
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function isValidImei(value: string) {
+  const digits = imeiDigits(value);
+  return digits.length >= 14 && digits.length <= 16;
+}
+
+function phoneUnits(qty: number) {
+  return Math.max(1, Math.round(qty));
+}
+
 function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]) {
   const esc = (v: string | number) => {
     const s = String(v);
@@ -267,7 +321,7 @@ function openCashDrawer() {
 
 type SaleReceipt = {
   code: string;
-  items: { name: string; qty: number; weight?: number; lineTotal: number }[];
+  items: { name: string; qty: number; weight?: number; lineTotal: number; imei?: string }[];
   total: number;
   paid: number;
   change: number;
@@ -284,6 +338,7 @@ function daySaleToReceipt(sale: DaySale): SaleReceipt {
     qty: item.qty,
     weight: item.weight ?? undefined,
     lineTotal: item.lineTotal,
+    imei: item.imei || undefined,
   }));
   const total = items.reduce((sum, item) => sum + item.lineTotal, 0);
   return {
@@ -315,7 +370,8 @@ function printSaleTicket(sale: SaleReceipt) {
   const rows = sale.items
     .map(i => {
       const qty = i.weight != null ? `${i.qty}kg` : `x${i.qty}`;
-      return `<tr><td>${escapeHtml(i.name)}<br/><span style="color:#555">${qty}</span></td><td style="text-align:right">${fmt(i.lineTotal)}</td></tr>`;
+      const imei = i.imei ? `<br/><span style="color:#555">${escapeHtml(formatStoredImei(i.imei))}</span>` : "";
+      return `<tr><td>${escapeHtml(i.name)}${imei}<br/><span style="color:#555">${qty}</span></td><td style="text-align:right">${fmt(i.lineTotal)}</td></tr>`;
     })
     .join("");
   const when = sale.soldAt
@@ -1400,6 +1456,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
   const [search, setSearch] = useState("");
   const [weight, setWeight] = useState("");
   const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutImeis, setCheckoutImeis] = useState<Record<number, ImeiPair[]>>({});
   const [amountPaid, setAmountPaid] = useState("");
   const [lastSale, setLastSale] = useState<SaleReceipt | null>(null);
   const [saleError, setSaleError] = useState("");
@@ -1488,7 +1545,17 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
   const change = payment === "efectivo" && Number.isFinite(paidNum) ? Math.max(0, paidNum - total) : 0;
   const mixOk = payment !== "mixto" || Math.abs(mixTotal - total) < 0.01;
   const mixCash = Number(mixAmounts.efectivo) || 0;
-  const canConfirm =
+  const phoneCartItems = cart.filter(
+    item => productRequiresImei(item.product) && item.product.saleMode !== "granel",
+  );
+  const imeiOk = phoneCartItems.every(item => {
+    const units = phoneUnits(item.qty);
+    const list = checkoutImeis[item.product.id] ?? [];
+    return list.length >= units && list.slice(0, units).every(pair => (
+      isValidImei(pair.first) && (imeiDigits(pair.second) === "" || isValidImei(pair.second))
+    ));
+  });
+  const cashReady =
     !!payment &&
     cart.length > 0 &&
     shiftOpen === true &&
@@ -1499,6 +1566,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
       : payment === "mixto"
         ? mixCash === 0 || (Number.isFinite(paidNum) && paidNum >= mixCash && amountPaid !== "")
         : true);
+  const canConfirm = cashReady && imeiOk;
 
   const openCheckout = () => {
     if (!payment || cart.length === 0) return;
@@ -1514,6 +1582,14 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
     if (payment === "efectivo") setAmountPaid("");
     else if (payment === "mixto") setAmountPaid(String(Number(mixAmounts.efectivo) || total));
     else setAmountPaid(String(total));
+    const nextImeis: Record<number, ImeiPair[]> = {};
+    for (const item of cart) {
+      if (!productRequiresImei(item.product) || item.product.saleMode === "granel") continue;
+      const units = phoneUnits(item.qty);
+      const prev = checkoutImeis[item.product.id] ?? [];
+      nextImeis[item.product.id] = Array.from({ length: units }, (_, index) => prev[index] ?? emptyImeiPair());
+    }
+    setCheckoutImeis(nextImeis);
     setShowCheckout(true);
   };
 
@@ -1636,6 +1712,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
             productId: item.product.id,
             qty: item.qty,
             weight: item.product.saleMode === "granel" ? item.qty : null,
+            imei: productRequiresImei(item.product)
+              ? (checkoutImeis[item.product.id] ?? []).slice(0, phoneUnits(item.qty)).map(imeiPairText).filter(Boolean).join(" ; ")
+              : "",
           })),
         }),
       });
@@ -1648,6 +1727,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
           qty: i.qty,
           weight: i.weight,
           lineTotal: i.product.sellPrice * i.qty,
+          imei: productRequiresImei(i.product)
+            ? (checkoutImeis[i.product.id] ?? []).slice(0, phoneUnits(i.qty)).map(imeiPairText).filter(Boolean).join(" ; ")
+            : undefined,
         })),
         total,
         paid: paidNum,
@@ -1662,6 +1744,7 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
       setClients(await api<Client[]>("/clients"));
       setMovements(await api<InventoryMovement[]>("/inventory/movements"));
       setShowCheckout(false);
+      setCheckoutImeis({});
       setAmountPaid("");
       setLastSale(sale);
       closeTicket(active.id);
@@ -1677,6 +1760,11 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
         <h2 className="text-xl font-bold text-slate-800 mb-1">Venta confirmada</h2>
         <p className="text-slate-500 text-sm mb-4">Ticket #{lastSale.code}</p>
         <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-600 mb-3 space-y-1.5 text-left">
+          {lastSale.items.map((item, index) => (
+            item.imei ? (
+              <p key={`${item.name}-${index}`} className="text-xs text-slate-500">{formatStoredImei(item.imei)}</p>
+            ) : null
+          ))}
           <div className="flex justify-between"><span>Total</span><span className="font-semibold">{fmt(lastSale.total)}</span></div>
           <div className="flex justify-between"><span>Pagó</span><span>{fmt(lastSale.paid)}</span></div>
           <div className="flex justify-between text-emerald-700 font-bold"><span>Cambio</span><span>{fmt(lastSale.change)}</span></div>
@@ -1941,6 +2029,64 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
               </div>
             </div>
 
+            {phoneCartItems.length > 0 && (
+              <div className="space-y-3">
+                {phoneCartItems.map((item, itemIndex) => {
+                  const units = phoneUnits(item.qty);
+                  const list = checkoutImeis[item.product.id] ?? Array.from({ length: units }, () => emptyImeiPair());
+                  const updateImei = (index: number, key: "first" | "second", value: string) => {
+                    const next = Array.from({ length: units }, (_, i) => list[i] ?? emptyImeiPair());
+                    next[index] = { ...next[index], [key]: value };
+                    setCheckoutImeis(prev => ({ ...prev, [item.product.id]: next }));
+                  };
+                  const imeiField = (index: number, key: "first" | "second", label: string, autoFocus: boolean) => {
+                    const value = (list[index] ?? emptyImeiPair())[key];
+                    const digits = imeiDigits(value);
+                    const invalid = value.trim() !== "" && !isValidImei(value);
+                    return (
+                      <div>
+                        <Input
+                          label={label}
+                          value={value}
+                          inputMode="numeric"
+                          autoComplete="off"
+                          maxLength={18}
+                          placeholder="15 dígitos"
+                          autoFocus={autoFocus}
+                          onChange={e => updateImei(index, key, e.target.value)}
+                        />
+                        {invalid && (
+                          <p className="mt-1 text-xs text-red-600">El IMEI debe tener entre 14 y 16 dígitos.</p>
+                        )}
+                        {!invalid && digits.length > 0 && digits.length < 14 && (
+                          <p className="mt-1 text-xs text-slate-400">{digits.length} / 15 dígitos</p>
+                        )}
+                      </div>
+                    );
+                  };
+                  return (
+                    <div key={item.product.id} className="space-y-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{item.product.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {units > 1
+                            ? `IMEI de cada unidad vendida (${units}). El segundo es opcional.`
+                            : "IMEI del celular vendido. El segundo es opcional."}
+                        </p>
+                      </div>
+                      {Array.from({ length: units }, (_, index) => (
+                        <div key={index} className="space-y-2">
+                          {units > 1 ? <p className="text-xs font-semibold text-slate-600">Unidad {index + 1}</p> : null}
+                          {imeiField(index, "first", "IMEI", itemIndex === 0 && index === 0)}
+                          {imeiField(index, "second", "IMEI 2 (opcional)", false)}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {(payment === "efectivo" || payment === "mixto") && (
               <Input
                 label={payment === "mixto" ? "¿Con cuánto paga en efectivo? (COP)" : "¿Con cuánto paga? (COP)"}
@@ -1950,16 +2096,16 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
                 value={amountPaid}
                 onChange={e => setAmountPaid(e.target.value)}
                 placeholder={String(payment === "mixto" ? (Number(mixAmounts.efectivo) || 0) : total)}
-                autoFocus
+                autoFocus={phoneCartItems.length === 0}
               />
             )}
 
             {payment === "efectivo" && (
               <div className={`rounded-xl px-4 py-3 flex justify-between items-center ${
-                canConfirm ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
+                cashReady ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
               }`}>
                 <span className="text-sm font-medium">Cambio</span>
-                <span className="text-xl font-bold">{canConfirm ? fmt(change) : "—"}</span>
+                <span className="text-xl font-bold">{cashReady ? fmt(change) : "—"}</span>
               </div>
             )}
 
@@ -1970,6 +2116,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
               <p className="text-xs text-amber-700">Esta venta quedará como crédito del cliente seleccionado.</p>
             )}
             {saleError && <p className="text-xs text-red-600">{saleError}</p>}
+            {phoneCartItems.length > 0 && !imeiOk && (
+              <p className="text-xs text-amber-700">Completa el IMEI del celular para confirmar la venta.</p>
+            )}
 
             <p className="text-xs text-slate-400">
               Al confirmar se abrirá el cajón monedero cuando haya pago en efectivo.
@@ -2115,6 +2264,9 @@ function Ventas({ products, setProducts, clients, setClients, movements, setMove
                                   {" · Activo "}{item.activeQty}
                                   {" · "}{fmt(item.lineTotal)}
                                 </p>
+                                {item.imei ? (
+                                  <p className="text-xs font-medium text-slate-600">{formatStoredImei(item.imei)}</p>
+                                ) : null}
                               </div>
                               <Input
                                 label="Devolver"
