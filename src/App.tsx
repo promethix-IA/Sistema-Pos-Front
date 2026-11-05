@@ -136,6 +136,7 @@ interface TicketTemplate {
   showChange: boolean;
   showReprint: boolean;
   extraHeader: string;
+  fontSize: number;
 }
 
 interface IntegrationsState {
@@ -158,7 +159,27 @@ const DEFAULT_TICKET: TicketTemplate = {
   showChange: true,
   showReprint: true,
   extraHeader: "",
+  fontSize: 12,
 };
+
+const TICKET_FONT_SIZES = [10, 12, 14, 16] as const;
+
+function ticketFontSize(value: unknown): number {
+  const size = Number(value);
+  return (TICKET_FONT_SIZES as readonly number[]).includes(size) ? size : 12;
+}
+
+function ticketPrintSizes(value: unknown) {
+  const body = ticketFontSize(value);
+  const ratio = body / 12;
+  return {
+    body,
+    title: Math.round(15 * ratio),
+    doc: Math.round(11 * ratio),
+    small: Math.round(10 * ratio),
+    total: Math.round(13 * ratio),
+  };
+}
 
 let ticketCacheOwner = "";
 
@@ -174,8 +195,8 @@ function bindTicketCache(email: string) {
 function readTicketTemplate(): TicketTemplate {
   try {
     const raw = localStorage.getItem(ticketCacheKey());
-    if (!raw) return { ...DEFAULT_TICKET };
-    return { ...DEFAULT_TICKET, ...(JSON.parse(raw) as Partial<TicketTemplate>) };
+    const parsed = raw ? (JSON.parse(raw) as Partial<TicketTemplate>) : {};
+    return { ...DEFAULT_TICKET, ...parsed, fontSize: ticketFontSize(parsed.fontSize) };
   } catch {
     return { ...DEFAULT_TICKET };
   }
@@ -385,6 +406,7 @@ function escapeHtml(value: string) {
 /** Imprime el ticket térmico / de caja sin encabezados del navegador. */
 function printSaleTicket(sale: SaleReceipt) {
   const tpl = readTicketTemplate();
+  const font = ticketPrintSizes(tpl.fontSize);
   const rows = sale.items
     .map(i => {
       const qtyLabel = i.weight != null ? `${i.qty} kg` : String(i.qty);
@@ -422,20 +444,20 @@ function printSaleTicket(sale: SaleReceipt) {
         html,body{margin:0!important;padding:0!important;background:#fff}
         .ticket{margin:0;padding:6px 8px}
       }
-      body{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{font-family:ui-monospace,Consolas,monospace;font-size:${font.body}px;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .ticket{width:72mm;max-width:100%;margin:0;padding:8px}
-      h1{font-size:15px;text-align:center;margin:0 0 2px;text-transform:uppercase}
-      .doc{font-size:11px;font-weight:700;letter-spacing:.04em;margin:6px 0 2px}
+      h1{font-size:${font.title}px;text-align:center;margin:0 0 2px;text-transform:uppercase}
+      .doc{font-size:${font.doc}px;font-weight:700;letter-spacing:.04em;margin:6px 0 2px}
       p{margin:2px 0;text-align:center}
       table{width:100%;border-collapse:collapse;margin-top:6px}
       td{padding:3px 0;vertical-align:top}
       td.qty{width:14%;padding-right:4px}
       td.r{text-align:right;white-space:nowrap}
-      th{font-size:10px;text-align:left;border-bottom:1px dashed #000;padding:0 0 4px;font-weight:700}
+      th{font-size:${font.small}px;text-align:left;border-bottom:1px dashed #000;padding:0 0 4px;font-weight:700}
       th.r{text-align:right}
-      .meta{color:#333;font-size:10px}
+      .meta{color:#333;font-size:${font.small}px}
       .line{border-top:1px dashed #000;margin:8px 0}
-      .tot{font-weight:700;font-size:13px}
+      .tot{font-weight:700;font-size:${font.total}px}
     </style></head><body>
     <div class="ticket">
     <h1>${escapeHtml(tpl.storeName)}</h1>
@@ -2428,6 +2450,16 @@ function TicketFields({ ticket, setTicket }: { ticket: TicketTemplate; setTicket
         value={ticket.footer}
         onChange={e => setTicket({ ...ticket, footer: e.target.value })}
       />
+      <Select
+        label="Tamaño de letra al imprimir"
+        value={String(ticketFontSize(ticket.fontSize))}
+        onChange={e => setTicket({ ...ticket, fontSize: ticketFontSize(e.target.value) })}
+      >
+        <option value="10">Pequeña</option>
+        <option value="12">Normal</option>
+        <option value="14">Grande</option>
+        <option value="16">Muy grande</option>
+      </Select>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {([
           ["showDate", "Mostrar fecha/hora de la venta"],
@@ -2461,7 +2493,7 @@ function Integraciones() {
       .then(next => {
         setState(next);
         if (next.ticket) {
-          const merged = { ...DEFAULT_TICKET, ...next.ticket };
+          const merged = { ...DEFAULT_TICKET, ...next.ticket, fontSize: ticketFontSize(next.ticket.fontSize) };
           setTicket(merged);
           writeTicketTemplate(merged);
         }
@@ -2492,7 +2524,7 @@ function Integraciones() {
         method: "PUT",
         body: JSON.stringify(ticket),
       });
-      const merged = { ...DEFAULT_TICKET, ...(next.ticket ?? ticket) };
+      const merged = { ...DEFAULT_TICKET, ...(next.ticket ?? ticket), fontSize: ticketFontSize((next.ticket ?? ticket).fontSize) };
       setState(next);
       setTicket(merged);
       writeTicketTemplate(merged);
