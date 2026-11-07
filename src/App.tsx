@@ -444,18 +444,18 @@ function printSaleTicket(sale: SaleReceipt) {
         html,body{margin:0!important;padding:0!important;background:#fff}
         .ticket{margin:0;padding:6px 8px}
       }
-      body{font-family:ui-monospace,Consolas,monospace;font-size:${font.body}px;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{font-family:Arial,Helvetica,sans-serif;font-size:${font.body}px;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .ticket{width:72mm;max-width:100%;margin:0;padding:8px}
       h1{font-size:${font.title}px;text-align:center;margin:0 0 2px;text-transform:uppercase}
       .doc{font-size:${font.doc}px;font-weight:700;letter-spacing:.04em;margin:6px 0 2px}
       p{margin:2px 0;text-align:center}
       table{width:100%;border-collapse:collapse;margin-top:6px}
-      td{padding:3px 0;vertical-align:top}
+      td{padding:3px 0;vertical-align:top;font-family:inherit;font-size:inherit}
       td.qty{width:14%;padding-right:4px}
       td.r{text-align:right;white-space:nowrap}
-      th{font-size:${font.small}px;text-align:left;border-bottom:1px dashed #000;padding:0 0 4px;font-weight:700}
+      th{font-size:inherit;text-align:left;border-bottom:1px dashed #000;padding:0 0 4px;font-weight:700;font-family:inherit}
       th.r{text-align:right}
-      .meta{color:#333;font-size:${font.small}px}
+      .meta{color:inherit;font-size:inherit;font-family:inherit}
       .line{border-top:1px dashed #000;margin:8px 0}
       .tot{font-weight:700;font-size:${font.total}px}
     </style></head><body>
