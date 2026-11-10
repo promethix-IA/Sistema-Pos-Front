@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState, useRef, type ReactNode } from "react";
 import { LoginScreen } from "./components/LoginScreen";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { AsistenteIA } from "./components/AsistenteIA";
 import { CierreCaja } from "./components/CierreCaja";
 import { Creditos } from "./components/Creditos";
 import { Negocios } from "./features/admin/Negocios";
@@ -3346,6 +3347,7 @@ export default function App() {
         </Suspense>
         </div>
       </main>
+      <AsistenteIA key={sessionEmail} role={sessionRole} />
     </div>
   );
 }
